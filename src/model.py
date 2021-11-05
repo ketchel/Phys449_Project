@@ -1,3 +1,7 @@
+import torch
+import torch.nn as nn
+import numpy as np
+
 #write code for pytorch model here
 def make_network(x, hid, ws, bs, apply_boundary, lim, custom_softplus=False):
   """Constructs network and loss function.
@@ -15,7 +19,26 @@ def make_network(x, hid, ws, bs, apply_boundary, lim, custom_softplus=False):
   """
   # Somthing along the lines Wx + b
 
+
+
   return None
+
+
+
+# This is analagous to _add_max in SpIN
+# not sure what the math does but I think it does the same thing
+def add_bounds(x, y, lim):
+    """
+    Adds the boundary conditions
+    Forces the wavefunction to be zero outside the range [-lim, lim]
+    """
+    mask = 1
+
+    for i in range(list(x.shape)[1]):
+        mask *= torch.maximum((torch.sqrt(2 * lim**2 - x[:, i]**2) - lim) / lim, torch.tensor(0))
+
+    return torch.unsqueeze(mask,  -1)*y
+
 
 class SpectralNetwork(object):
   """Class that constructs operators for SpIN and includes training loop."""
