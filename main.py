@@ -1,9 +1,19 @@
+import os
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "1"
+
+
 import jax.numpy as np
 from jax import random, jit, vmap, jacfwd
 from jax.experimental import optimizers
 from jax.nn import sigmoid, softplus
 from jax import tree_multimap
 from jax import ops
+from jax.config import config
+config.update("jax_platform_name", "gpu")
+
+# config.update("XLA_PYTHON_CLIENT_MEM_FRACTION", 0.8)
+
 
 from src.model import SpIN
 from util.util import MLP
@@ -15,6 +25,8 @@ from functools import partial
 from torch.utils import data
 from tqdm import trange
 import matplotlib.pyplot as plt
+
+
 
 if __name__ == '__main__':
   # Problem setup
@@ -45,3 +57,4 @@ if __name__ == '__main__':
 
   efuns_plot = efuns[:,3].reshape(128,128)
   plt.imshow(efuns_plot)
+  plt.show()
