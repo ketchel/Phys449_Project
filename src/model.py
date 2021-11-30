@@ -1,86 +1,209 @@
-#write code for pytorch model here
-def make_network(x, hid, ws, bs, apply_boundary, lim, custom_softplus=False):
-  """Constructs network and loss function.
+import jax.numpy as np
+from jax import random, jit, vmap, jacfwd
+from jax.experimental import optimizers
+from jax.nn import sigmoid, softplus
+from jax import tree_multimap
+from jax import ops
 
-  Args:
-    x: Input to the network.
-    hid: List of shapes of the hidden layers of the networks.
-    ws: List of weights of the network.
-    bs: List of biases of the network.
-    apply_boundary: If true, force network output to be zero at boundary
-    lim: The limit of the network, if apply_boundary is true.
 
-  Returns:
-    Output of multi-layer perception network.
-  """
-  # Somthing along the lines Wx + b
+import itertools
+from functools import partial
+from torch.utils import data
+from tqdm import trange
+import matplotlib.pyplot as plt
 
-  return None
 
-class SpectralNetwork(object):
-  """Class that constructs operators for SpIN and includes training loop."""
+class SpIN:
+    # Initialize the class
+    def __init__(self, operator, layers, MLP):
 
-  def __init__(self, operator, network, data, params,
-               decay=0.0, use_pfor=True, per_example=False):
-  # Basing this on the tensorflow code
-    """Creates all ops and variables required to train SpIN.
+        # Callable operator function
+        self.operator = operator
 
-    Args:
-      operator: The linear operator to diagonalize.
-      network: A function that returns the network applied on the output.
-      data: A TensorFlow op for the input to the spectral inference network.
-      params: The trainable parameters of the model built by 'network'.
-      decay (optional): The decay parameter for the moving average of the
-        network covariance and Jacobian.
-      use_pfor (optional): If true, use the parallel_for package to compute
-        Jacobians. This is often faster but has higher memory overhead.
-      per_example (optional): If true, computes the Jacobian of the network
-        output covariance using a more complicated but often faster method.
-        This interacts badly with anything that uses custom_gradients, so needs
-        to be avoided for some code branches.
-    """
-  def _moving_average(self, x, c):
-    """Creates moving average operation.
+        # Network initialization and evaluation functions
+        self.net_init, self.net_apply = MLP(layers)
 
-    Args:
-      x: The tensor or list of tensors of which to take a moving average.
-      c: The decay constant of the moving average, between 0 and 1.
-        0.0 = the moving average is constant
-        1.0 = the moving averge has no memory
+        # Initialize network parameters
+        params = self.net_init(random.PRNGKey(0))
 
-    Returns:
-      ma: Moving average variables.
-      ma_update: Op to update moving average.
-    """
-    def _training_update(self,
-                       sigma,
-                       pi,
-                       params,
-                       decay=0.0,
-                       use_pfor=False,
-                       features=None,
-                       jac=None):
-    """Makes gradient and moving averages.
+        # Optimizer initialization and update functions
+        lr = optimizers.exponential_decay(1e-4, decay_steps=1000, decay_rate=0.9)
+        self.opt_init, \
+        self.opt_update, \
+        self.get_params = optimizers.rmsprop(lr)
+        self.opt_state = self.opt_init(params)
 
-    Args:
-      sigma: The covariance of the outputs of the network.
-      pi: The matrix of network output covariances multiplied by the linear
-        operator to diagonalize. See paper for explicit definition.
-      params: The trainable parameters.
-      decay (optional): The decay parameter for the moving average of the
-        network covariance and Jacobian.
-      use_pfor (optional): If true, use the parallel_for package to compute
-        Jacobians. This is often faster but has higher memory overhead.
-      features (optional): The output features of the spectral inference
-        network. Only necessary if per_example=True.
-      jac (optional): The Jacobian of the network. Only necessary if
-        per_example=True.
+        # Decay parameter
+        self.beta = 1.0
 
-    Returns:
-      loss: The loss function for SpIN - the sum of eigenvalues.
-      gradients: The approximate gradient of the loss using moving averages.
-      eigvals: The full array of eigenvalues, rather than just their sum.
-      chol: The Cholesky decomposition of the covariance of the network outputs,
-        which is needed to demix the network outputs.
-    """
-    return None
+        # Number of eigenvalues
+        self.neig = layers[-1]
+
+        # Logger
+        self.itercount = itertools.count()
+        self.loss_log = []
+        self.evals_log = []
+
+    def apply_mask(self, inputs, outputs):
+        # mask is used to zero the boundary points.
+        mask = 0.1
+        if len(inputs.shape) == 2:
+            for i in range(inputs.shape[1]):
+                mask *= np.maximum((-inputs[:,i]**2 + np.pi * inputs[:,i]), 0)
+            mask = np.expand_dims(mask, -1)
+
+        elif len(inputs.shape) == 1:
+            for x in inputs:
+                mask *= np.maximum((-x ** 2 + np.pi * x ), 0)
+
+        return mask*outputs
+
+    def net_u(self, params, inputs):
+        outputs = self.net_apply(params, inputs)
+        outputs = self.apply_mask(inputs, outputs)
+        return outputs
+
+    def evaluate_spin(self, params, inputs, averages, beta):
+        # Fetch batch
+        n = inputs.shape[0]
+        sigma_avg, _ = averages
+
+        # Evaluate model
+        u = self.net_u(params, inputs)
+        sigma = np.dot(u.T, u)/n
+        sigma_avg = (1.0 - beta) * sigma_avg + beta * sigma # $\bar{\Sigma}$
+
+        # Cholesky
+        chol = np.linalg.cholesky(sigma_avg)
+        choli = np.linalg.inv(chol) # $L^{-1}$
+
+        # Operator
+        operator = self.operator(self.net_u, params, inputs)
+        pi = np.dot(operator.T, u)/n # $\Pi$
+        rq = np.dot(choli, np.dot(pi, choli.T)) # $\Lambda$
+
+        return (u, choli, pi, rq, operator), sigma_avg
+
+    def masked_gradients(self, params, inputs, outputs, averages, beta):
+        # Fetch batch
+        n = inputs.shape[0]
+        u, choli, _, rq, operator = outputs
+        _, sigma_jac_avg = averages
+
+        dl = np.diag(np.diag(choli))
+        triu = np.triu(np.dot(rq, dl))
+
+        grad_sigma = -1.0 * np.matmul(choli.T, triu) # \frac{\partial tr(\Lambda)}{\partial \Sigma}
+        grad_pi = np.dot(choli.T, dl) # \frac{\partail tr(\Lambda){\partial \Pi}}
+
+        grad_param_pre = jacfwd(self.net_u)
+        grad_param = vmap(grad_param_pre, in_axes = (None, 0))
+
+        grad_theta = grad_param(params, inputs) # \frac{\partial u}{\partial \theta}
+
+        sigma_jac = tree_multimap(lambda x:
+                                  np.tensordot(u.T, x, 1),
+                                  grad_theta) # frac{\partail \Sigma}{\partial \theta}
+
+        sigma_jac_avg = tree_multimap(lambda x,y:
+                                      (1.0-beta) * x + beta * y,
+                                      sigma_jac_avg,
+                                      sigma_jac)
+
+        gradient_pi_1 = np.dot(grad_pi.T, operator.T)
+
+        # gradient  = \frac{\partial tr(\Lambda)}{\partial \theta}
+        gradients = tree_multimap(lambda x,y:
+                                  (np.tensordot(gradient_pi_1, x, ([0,1],[1,0])) +
+                                   1.0 * np.tensordot(grad_sigma.T, y,([0,1],[1,0])))/n,
+                                  grad_theta,
+                                  sigma_jac_avg)
+        # Negate for gradient ascent
+        gradients = tree_multimap(lambda x: -1.0*x, gradients)
+
+        return gradients, sigma_jac_avg
+
+    def loss_and_grad(self, params, batch):
+        # Fetch batch
+        inputs, averages, beta = batch
+
+        # Evaluate SPIN model
+        outputs, sigma_avg = self.evaluate_spin(params,
+                                                inputs,
+                                                averages,
+                                                beta)
+
+        # Compute loss
+        _, _, _, rq, _ = outputs
+        eigenvalues = np.diag(rq)  # eigenvalues are the diagonal entries of $\Lamda$
+        loss = np.sum(eigenvalues)
+
+        # Compute masked gradients
+        gradients, sigma_jac_avg = self.masked_gradients(params,
+                                                         inputs,
+                                                         outputs,
+                                                         averages,
+                                                         beta)
+
+        # Store updated averages
+        averages = (sigma_avg, sigma_jac_avg)
+
+        return loss, gradients, averages
+
+    def init_sigma_jac(self, params, inputs):
+        u = self.net_u(params, inputs)
+        grad_param = jacfwd(self.net_u)
+        grad_theta = grad_param(params, inputs)
+        sigma_jac = tree_multimap(lambda x: np.tensordot(u.T, x, 1),
+                                          grad_theta)
+        return sigma_jac
+
+
+    # Define a jit-compiled update step
+    @partial(jit, static_argnums=(0,))
+    def step(self, i, opt_state, batch):
+        params = self.get_params(opt_state)
+        loss, gradients, averages = self.loss_and_grad(params, batch)
+        opt_state = self.opt_update(i, gradients, opt_state)
+        return loss, opt_state, averages
+
+    # Optimize parameters in a loop
+    def train(self, dataset, nIter = 10000):
+        inputs = iter(dataset)
+        pbar = trange(nIter)
+
+        # Initialize moving averages
+        sigma_avg = np.ones(self.neig)
+        sigma_jac_avg = self.init_sigma_jac(self.get_params(self.opt_state), next(inputs))
+        averages = (sigma_avg, sigma_jac_avg)
+
+        # Main training loop
+        for it in pbar:
+            # Set beta
+            cnt = next(self.itercount)
+            beta = self.beta if cnt > 0 else 1.0
+
+            # Create batch
+            batch = next(inputs), averages, beta
+
+            # Run one gradient descent update
+            loss, self.opt_state, averages = self.step(cnt, self.opt_state, batch)
+
+            # Logger
+            params = self.get_params(self.opt_state)
+            evals, _ = self.eigenpairs(params, next(inputs), averages, beta)
+            self.loss_log.append(loss)
+            self.evals_log.append(evals)
+            pbar.set_postfix({'Loss': loss})
+
+        return params, averages, beta
+
+
+    # Evaluates predictions at test points
+    @partial(jit, static_argnums=(0,))
+    def eigenpairs(self, params, inputs, averages, beta):
+        outputs, _ = self.evaluate_spin(params, inputs, averages, beta)
+        u, choli, _, rq, _ = outputs
+        evals = np.diag(rq)
+        efuns = np.matmul(u, choli.T)
+        return evals, efuns
