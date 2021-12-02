@@ -1,28 +1,36 @@
-import jax.numpy as np
-from jax import random, jit, vmap, jacfwd
-from jax.experimental import optimizers
-from jax.nn import sigmoid, softplus
-from jax import tree_multimap
-from jax import ops
+from jax import numpy as np
+from jax import random, vmap, jacfwd
+from jax.nn import sigmoid
+import os
+from jax.config import config
+
+use_gpu = False
+if use_gpu:
+    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+    os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".50"
+    config.update("jax_platform_name", "gpu")
+else:
+    config.update("jax_platform_name", "cpu")
 
 
 def laplacian_1d(u_fn, params, inputs):
     def action(params, inputs):
         u_xx = jacfwd(jacfwd(u_fn, 1), 1)(params, inputs)
         return u_xx
-    vec_fun = vmap(action, in_axes = (None, 0))
+    vec_fun = vmap(action, in_axes=(None, 0))
     laplacian = vec_fun(params, inputs)
     return np.squeeze(laplacian)
 
 
 def laplacian_2d(u_fn, params, inputs):
-    fun = lambda params,x,y: u_fn(params, np.array([x,y]))
-    def action(params,x,y):
-        u_xx = jacfwd(jacfwd(fun, 1), 1)(params,x,y)
-        u_yy = jacfwd(jacfwd(fun, 2), 2)(params,x,y)
+    def fun(params, x, y): return u_fn(params, np.array([x, y]))
+
+    def action(params, x, y):
+        u_xx = jacfwd(jacfwd(fun, 1), 1)(params, x, y)
+        u_yy = jacfwd(jacfwd(fun, 2), 2)(params, x, y)
         return u_xx + u_yy
-    vec_fun = vmap(action, in_axes = (None, 0, 0))
-    laplacian = vec_fun(params, inputs[:,0], inputs[:,1])
+    vec_fun = vmap(action, in_axes=(None, 0, 0))
+    laplacian = vec_fun(params, inputs[:, 0], inputs[:, 1])
     return laplacian
 
 
@@ -36,6 +44,7 @@ def MLP(layers):
         key, *keys = random.split(rng_key, len(layers))
         params = list(map(init_layer, keys, layers[:-1], layers[1:]))
         return params
+
     def apply(params, inputs):
         for W, b in params[:-1]:
             outputs = np.dot(inputs, W) + b

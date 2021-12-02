@@ -1,6 +1,6 @@
-import jax.numpy as np
+from jax import numpy as np
 from jax import random, jit, vmap, jacfwd
-from jax.experimental import optimizers
+from jax.example_libraries import optimizers
 from jax import tree_multimap
 import itertools
 from functools import partial
@@ -22,10 +22,10 @@ class SpIN:
 
         # Optimizer initialization and update functions
         lr = optimizers.exponential_decay(
-            1e-4, decay_steps=1000, decay_rate=0.9)
+            step_size=1e-4, decay_steps=1000, decay_rate=0.9)
         self.opt_init, \
             self.opt_update, \
-            self.get_params = optimizers.rmsprop(lr)
+            self.get_params = optimizers.adam(lr)
         self.opt_state = self.opt_init(params)
 
         # Decay parameter
@@ -113,11 +113,11 @@ class SpIN:
         gradient_pi_1 = np.dot(grad_pi.T, operator.T)
 
         # gradient  = \frac{\partial tr(\Lambda)}{\partial \theta}
-        gradients = tree_multimap(lambda x, y:
-                                  (np.tensordot(gradient_pi_1, x, ([0, 1], [1, 0])) +
-                                   1.0 * np.tensordot(grad_sigma.T, y, ([0, 1], [1, 0])))/n,
-                                  grad_theta,
-                                  sigma_jac_avg)
+        gradients = tree_multimap(
+            lambda x, y:
+            (np.tensordot(gradient_pi_1, x, ([0, 1], [1, 0]))
+                + 1.0*np.tensordot(grad_sigma.T, y, ([0, 1], [1, 0])))/n,
+            grad_theta, sigma_jac_avg)
         # Negate for gradient ascent
         gradients = tree_multimap(lambda x: -1.0*x, gradients)
 

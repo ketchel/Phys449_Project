@@ -1,19 +1,8 @@
 import matplotlib.pyplot as plt
+from jax import numpy as np
+from src.util import laplacian_2d, MLP
 from src.data_gen import Sampler, DataGenerator
-from util.util import laplacian_2d
-from util.util import MLP
 from src.model import SpIN
-# from jax.config import config
-import jax.numpy as np
-# import os
-# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "1"
-
-
-# config.update("jax_platform_name", "gpu")
-
-# config.update("XLA_PYTHON_CLIENT_MEM_FRACTION", 0.8)
-
 
 if __name__ == '__main__':
     # Problem setup
