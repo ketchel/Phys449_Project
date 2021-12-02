@@ -1,16 +1,10 @@
 import jax.numpy as np
 from jax import random, jit, vmap, jacfwd
 from jax.experimental import optimizers
-from jax.nn import sigmoid, softplus
 from jax import tree_multimap
-from jax import ops
-
-
 import itertools
 from functools import partial
-from torch.utils import data
 from tqdm import trange
-import matplotlib.pyplot as plt
 
 
 class SpIN:
@@ -27,10 +21,11 @@ class SpIN:
         params = self.net_init(random.PRNGKey(0))
 
         # Optimizer initialization and update functions
-        lr = optimizers.exponential_decay(1e-4, decay_steps=1000, decay_rate=0.9)
+        lr = optimizers.exponential_decay(
+            1e-4, decay_steps=1000, decay_rate=0.9)
         self.opt_init, \
-        self.opt_update, \
-        self.get_params = optimizers.rmsprop(lr)
+            self.opt_update, \
+            self.get_params = optimizers.rmsprop(lr)
         self.opt_state = self.opt_init(params)
 
         # Decay parameter
@@ -49,12 +44,13 @@ class SpIN:
         mask = 0.1
         if len(inputs.shape) == 2:
             for i in range(inputs.shape[1]):
-                mask *= np.maximum((-inputs[:,i]**2 + np.pi * inputs[:,i]), 0)
+                mask *= np.maximum((-inputs[:, i] **
+                                   2 + np.pi * inputs[:, i]), 0)
             mask = np.expand_dims(mask, -1)
 
         elif len(inputs.shape) == 1:
             for x in inputs:
-                mask *= np.maximum((-x ** 2 + np.pi * x ), 0)
+                mask *= np.maximum((-x ** 2 + np.pi * x), 0)
 
         return mask*outputs
 
@@ -71,16 +67,16 @@ class SpIN:
         # Evaluate model
         u = self.net_u(params, inputs)
         sigma = np.dot(u.T, u)/n
-        sigma_avg = (1.0 - beta) * sigma_avg + beta * sigma # $\bar{\Sigma}$
+        sigma_avg = (1.0 - beta) * sigma_avg + beta * sigma  # $\bar{\Sigma}$
 
         # Cholesky
         chol = np.linalg.cholesky(sigma_avg)
-        choli = np.linalg.inv(chol) # $L^{-1}$
+        choli = np.linalg.inv(chol)  # $L^{-1}$
 
         # Operator
         operator = self.operator(self.net_u, params, inputs)
-        pi = np.dot(operator.T, u)/n # $\Pi$
-        rq = np.dot(choli, np.dot(pi, choli.T)) # $\Lambda$
+        pi = np.dot(operator.T, u)/n  # $\Pi$
+        rq = np.dot(choli, np.dot(pi, choli.T))  # $\Lambda$
 
         return (u, choli, pi, rq, operator), sigma_avg
 
@@ -93,19 +89,23 @@ class SpIN:
         dl = np.diag(np.diag(choli))
         triu = np.triu(np.dot(rq, dl))
 
-        grad_sigma = -1.0 * np.matmul(choli.T, triu) # \frac{\partial tr(\Lambda)}{\partial \Sigma}
-        grad_pi = np.dot(choli.T, dl) # \frac{\partail tr(\Lambda){\partial \Pi}}
+        # \frac{\partial tr(\Lambda)}{\partial \Sigma}
+        grad_sigma = -1.0 * np.matmul(choli.T, triu)
+        # \frac{\partail tr(\Lambda){\partial \Pi}}
+        grad_pi = np.dot(choli.T, dl)
 
         grad_param_pre = jacfwd(self.net_u)
-        grad_param = vmap(grad_param_pre, in_axes = (None, 0))
+        grad_param = vmap(grad_param_pre, in_axes=(None, 0))
 
-        grad_theta = grad_param(params, inputs) # \frac{\partial u}{\partial \theta}
+        # \frac{\partial u}{\partial \theta}
+        grad_theta = grad_param(params, inputs)
 
+        # frac{\partail \Sigma}{\partial \theta}
         sigma_jac = tree_multimap(lambda x:
                                   np.tensordot(u.T, x, 1),
-                                  grad_theta) # frac{\partail \Sigma}{\partial \theta}
+                                  grad_theta)
 
-        sigma_jac_avg = tree_multimap(lambda x,y:
+        sigma_jac_avg = tree_multimap(lambda x, y:
                                       (1.0-beta) * x + beta * y,
                                       sigma_jac_avg,
                                       sigma_jac)
@@ -113,9 +113,9 @@ class SpIN:
         gradient_pi_1 = np.dot(grad_pi.T, operator.T)
 
         # gradient  = \frac{\partial tr(\Lambda)}{\partial \theta}
-        gradients = tree_multimap(lambda x,y:
-                                  (np.tensordot(gradient_pi_1, x, ([0,1],[1,0])) +
-                                   1.0 * np.tensordot(grad_sigma.T, y,([0,1],[1,0])))/n,
+        gradients = tree_multimap(lambda x, y:
+                                  (np.tensordot(gradient_pi_1, x, ([0, 1], [1, 0])) +
+                                   1.0 * np.tensordot(grad_sigma.T, y, ([0, 1], [1, 0])))/n,
                                   grad_theta,
                                   sigma_jac_avg)
         # Negate for gradient ascent
@@ -135,7 +135,8 @@ class SpIN:
 
         # Compute loss
         _, _, _, rq, _ = outputs
-        eigenvalues = np.diag(rq)  # eigenvalues are the diagonal entries of $\Lamda$
+        # eigenvalues are the diagonal entries of $\Lamda$
+        eigenvalues = np.diag(rq)
         loss = np.sum(eigenvalues)
 
         # Compute masked gradients
@@ -155,11 +156,11 @@ class SpIN:
         grad_param = jacfwd(self.net_u)
         grad_theta = grad_param(params, inputs)
         sigma_jac = tree_multimap(lambda x: np.tensordot(u.T, x, 1),
-                                          grad_theta)
+                                  grad_theta)
         return sigma_jac
 
-
     # Define a jit-compiled update step
+
     @partial(jit, static_argnums=(0,))
     def step(self, i, opt_state, batch):
         params = self.get_params(opt_state)
@@ -168,13 +169,14 @@ class SpIN:
         return loss, opt_state, averages
 
     # Optimize parameters in a loop
-    def train(self, dataset, nIter = 10000):
+    def train(self, dataset, nIter=10000):
         inputs = iter(dataset)
         pbar = trange(nIter)
 
         # Initialize moving averages
         sigma_avg = np.ones(self.neig)
-        sigma_jac_avg = self.init_sigma_jac(self.get_params(self.opt_state), next(inputs))
+        sigma_jac_avg = self.init_sigma_jac(
+            self.get_params(self.opt_state), next(inputs))
         averages = (sigma_avg, sigma_jac_avg)
 
         # Main training loop
@@ -187,7 +189,8 @@ class SpIN:
             batch = next(inputs), averages, beta
 
             # Run one gradient descent update
-            loss, self.opt_state, averages = self.step(cnt, self.opt_state, batch)
+            loss, self.opt_state, averages = self.step(
+                cnt, self.opt_state, batch)
 
             # Logger
             params = self.get_params(self.opt_state)
@@ -198,8 +201,8 @@ class SpIN:
 
         return params, averages, beta
 
-
     # Evaluates predictions at test points
+
     @partial(jit, static_argnums=(0,))
     def eigenpairs(self, params, inputs, averages, beta):
         outputs, _ = self.evaluate_spin(params, inputs, averages, beta)

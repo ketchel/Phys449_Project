@@ -1,29 +1,24 @@
-import jax.numpy as np
-from jax import random, jit, vmap, jacfwd
-from jax.experimental import optimizers
-from jax.nn import sigmoid, softplus
-from jax import tree_multimap
-from jax import ops
-
-import itertools
+from jax import random, jit
 from functools import partial
 from torch.utils import data
-from tqdm import trange
+
 
 class Sampler:
     # Initialize the class
-    def __init__(self, dim, coords, name = None):
+    def __init__(self, dim, coords, name=None):
         self.dim = dim
         self.coords = coords
         self.name = name
 
-    def sample(self, N, key = random.PRNGKey(1234)):
-        x = self.coords.min(1) + (self.coords.max(1)-self.coords.min(1))*random.uniform(key, (N, self.dim))
+    def sample(self, N, key=random.PRNGKey(1234)):
+        min = self.coords.min(1)
+        diff = self.coords.max(1) - self.coords.min(1)
+        x = min + diff*random.uniform(key, (N, self.dim))
         return x
 
 
 class DataGenerator(data.Dataset):
-    def __init__(self, dom_sampler, mu_X = 0.0, sigma_X = 1.0, batch_size=64):
+    def __init__(self, dom_sampler, mu_X=0.0, sigma_X=1.0, batch_size=64):
         'Initialization'
         self.mu_X = mu_X
         self.sigma_X = sigma_X
