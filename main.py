@@ -3,11 +3,51 @@ from jax import numpy as np
 from src.util import laplacian_2d, MLP
 from src.data_gen import Sampler, DataGenerator
 from src.model import SpIN
+import argparse
+import json
 
-if __name__ == '__main__':
-    # Problem setup
+
+def get_params():
+    # Default values
+    lr = 1e-4
     ndim = 2
     neig = 4
+    num_iters = 15000
+    num_layers = 4
+    num_hidden = 64
+    batch_size = 64
+    results = "results"
+    param = None
+
+    parser = argparse.ArgumentParser(
+        description="Jax-Based Spectral Inference Network")
+    parser.add_argument('--param', default=param, help='parameter file name')
+
+    args = parser.parse_args()
+    param = args.param
+
+    if param:
+        f = open(args.param, "r")
+        hyper = json.loads(f.read())
+    else:
+        hyper = {
+            "lr": lr,
+            "num_iters": num_iters,
+            "batch_size": batch_size,
+            "ndim": ndim,
+            "neig": neig,
+            "num_hidden": num_hidden,
+            "num_layers": num_layers,
+            "results": results,
+        }
+    return hyper
+
+
+if __name__ == '__main__':
+    hyper = get_params()
+    # Problem setup
+    ndim = hyper["ndim"]
+    neig = hyper["neig"]
 
     # Domain boundaries
     dom_coords = np.array([[0, np.pi]])

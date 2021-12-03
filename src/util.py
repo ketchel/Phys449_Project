@@ -1,8 +1,8 @@
 from jax import numpy as np
 from jax import random, vmap, jacfwd
 from jax.nn import sigmoid
-import os
 from jax.config import config
+import os
 
 use_gpu = False
 if use_gpu:
@@ -53,13 +53,3 @@ def MLP(layers):
         outputs = np.dot(inputs, W) + b
         return outputs
     return init, apply
-
-
-# def plotting_function():
-#   evals, efuns = model.eigenpairs(opt_params, test_input, averages, beta)
-#   print('Predicted eigenvalues: {}'.format(evals))
-#   evals_true, efuns_true = exact_eigenpairs_1d(x_star[:,None], neig)
-#   print('True eigenvalues: {}'.format(evals_true))
-
-#  efuns_plot = efuns[:,0].reshape(128,128)
-#   plt.imshow(efuns_plot)

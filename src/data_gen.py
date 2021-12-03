@@ -26,14 +26,14 @@ class DataGenerator(data.Dataset):
         self.batch_size = batch_size
         self.key = random.PRNGKey(1234)
 
-    def __getitem__(self, index):
-        'Generate one batch of data'
-        self.key, subkey = random.split(self.key)
-        X = self.__data_generation(subkey)
-        return X
-
     @partial(jit, static_argnums=(0,))
     def __data_generation(self, key):
         'Generates data containing batch_size samples'
         inputs = self.dom_sampler.sample(self.batch_size, key)
         return inputs
+
+    def __getitem__(self, index):
+        'Generate one batch of data'
+        self.key, subkey = random.split(self.key)
+        X = self.__data_generation(subkey)
+        return X
