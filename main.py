@@ -32,12 +32,12 @@ def get_params():
     else:
         hyper = {
             "lr": lr,
-            "num_iters": num_iters,
-            "batch_size": batch_size,
             "ndim": ndim,
             "neig": neig,
-            "num_hidden": num_hidden,
+            "num_iters": num_iters,
             "num_layers": num_layers,
+            "num_hidden": num_hidden,
+            "batch_size": batch_size,
             "results": results,
         }
     return hyper
