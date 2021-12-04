@@ -8,5 +8,6 @@
   "num_layers": 4,
   "num_hidden": 64,
   "batch_size": 64,
+  "grid_size": 128,
   "results": "results"
 }

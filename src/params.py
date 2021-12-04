@@ -14,6 +14,7 @@ def get_params():
     num_layers = 4
     num_hidden = 64
     batch_size = 64
+    grid_size = 128
     results = "results"
     param = None
 
@@ -38,5 +39,6 @@ def get_params():
             "num_hidden": num_hidden,
             "batch_size": batch_size,
             "results": results,
+            "grid_size": grid_size
         }
     return hyper
