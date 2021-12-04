@@ -28,7 +28,7 @@ def main():
     evals, efuns = model.eigenpairs(opt_params, test_input, averages, beta)
     print('Predicted eigenvalues: {}'.format(evals))
 
-    efuns_plot = efuns[:, 3].reshape(128, 128)
+    efuns_plot = efuns[:, 0].reshape(128, 128)
     plt.imshow(efuns_plot)
     plt.show()
 

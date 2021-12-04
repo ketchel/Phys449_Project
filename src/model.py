@@ -5,6 +5,7 @@ from jax import tree_multimap
 import itertools
 from functools import partial
 from tqdm import trange
+import optax
 
 
 def apply_mask(inputs, outputs):
@@ -26,6 +27,7 @@ class SpIN:
         self.neig = hyper["neig"]
         num_hidden = hyper["num_hidden"]
         num_layers = hyper["num_layers"]
+        lr = hyper["lr"]
 
         # Callable operator function
         self.operator = operator
@@ -37,7 +39,7 @@ class SpIN:
 #             layers.append(num_hidden)
 #         layers.append(self.neig)
 #         key1, key2 = random.split(random.PRNGKey(0))
-#         x = random.uniform(key1, (batch_size, dim))*10.0
+#         x = random.uniform(key1, (batch_size, dim))
 #         self.model = MLP(features=layers)
 #         params = self.model.init(key2, x)
 #         self.net_apply = self.model.apply  # To maintain compatability
@@ -49,16 +51,18 @@ class SpIN:
         layers.append(self.neig)
         # Network initialization and evaluation functions
         net_init, self.net_apply = MLP(layers)
+
         # Initialize network parameters
         params = net_init(random.PRNGKey(0))
-
         # Optimizer initialization and update functions
         lr = optimizers.exponential_decay(
-            step_size=1e-4, decay_steps=1000, decay_rate=0.9)
-        self.opt_init, \
-            self.opt_update, \
-            self.get_params = optimizers.adam(lr)
-        self.opt_state = self.opt_init(params)
+            step_size=lr, decay_steps=1000, decay_rate=0.9)
+        opt_init, self.opt_update, self.get_params = optimizers.adam(lr)
+        self.opt_state = opt_init(params)
+
+#         self.params = net_init(random.PRNGKey(0))
+#         self.tx = optax.adam(lr)
+#         self.tx_opt_state = self.tx.init(params)
 
         # Decay parameter
         self.beta = 1.0
