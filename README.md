@@ -22,12 +22,18 @@ Most of the code is in the `src` directory and their purposes are as follows:
 
 ## Dependencies
 
+### External
+
 - jax
 - jaxlib
 - optax
 - matplotlib
 - tqdm
 - pytorch
+
+### Internal
+
+- os
 - functools
 - itertools
 
