@@ -12,7 +12,7 @@ class DataGenerator(Dataset):
         self.delta = self.max - self.min
         self.key = key
 
-    @partial(jit, static_argnums=(0,))
+    @partial(jit, static_argnums=(0))
     def __data_generation(self, key):
         inputs = self.min + self.delta * \
             random.uniform(key, (self.batch_size, self.dim))

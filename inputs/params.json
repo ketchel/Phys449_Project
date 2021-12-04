@@ -4,7 +4,7 @@
   "box_max": 3.141592653589793,
   "ndim": 2,
   "neig": 4,
-  "num_iters": 15000,
+  "num_iters": 600,
   "num_layers": 4,
   "num_hidden": 64,
   "batch_size": 64,
