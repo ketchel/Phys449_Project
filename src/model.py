@@ -7,26 +7,50 @@ from functools import partial
 from tqdm import trange
 
 
+def apply_mask(inputs, outputs):
+    # mask is used to zero the boundary points.
+    mask = 0.1
+    if len(inputs.shape) == 2:
+        for i in range(inputs.shape[1]):
+            mask *= np.maximum((-inputs[:, i] **
+                               2 + np.pi * inputs[:, i]), 0)
+        mask = np.expand_dims(mask, -1)
+    elif len(inputs.shape) == 1:
+        for x in inputs:
+            mask *= np.maximum((-x ** 2 + np.pi * x), 0)
+    return mask*outputs
+
+
 class SpIN:
     def __init__(self, operator, MLP, hyper):
-        ndim = hyper["ndim"]
-        neig = hyper["neig"]
+        self.neig = hyper["neig"]
         num_hidden = hyper["num_hidden"]
         num_layers = hyper["num_layers"]
 
         # Callable operator function
         self.operator = operator
 
+#         batch_size = hyper["batch_size"]
+#         dim = hyper["ndim"]
+#         layers = []
+#         for i in range(num_layers-1):
+#             layers.append(num_hidden)
+#         layers.append(self.neig)
+#         key1, key2 = random.split(random.PRNGKey(0))
+#         x = random.uniform(key1, (batch_size, dim))*10.0
+#         self.model = MLP(features=layers)
+#         params = self.model.init(key2, x)
+#         self.net_apply = self.model.apply  # To maintain compatability
+
+        ndim = hyper["ndim"]
         layers = [ndim]
         for i in range(num_layers-1):
             layers.append(num_hidden)
-        layers.append(neig)
-
+        layers.append(self.neig)
         # Network initialization and evaluation functions
-        self.net_init, self.net_apply = MLP(layers)
-
+        net_init, self.net_apply = MLP(layers)
         # Initialize network parameters
-        params = self.net_init(random.PRNGKey(0))
+        params = net_init(random.PRNGKey(0))
 
         # Optimizer initialization and update functions
         lr = optimizers.exponential_decay(
@@ -39,32 +63,14 @@ class SpIN:
         # Decay parameter
         self.beta = 1.0
 
-        # Number of eigenvalues
-        self.neig = layers[-1]
-
         # Logger
         self.itercount = itertools.count()
         self.loss_log = []
         self.evals_log = []
 
-    def apply_mask(self, inputs, outputs):
-        # mask is used to zero the boundary points.
-        mask = 0.1
-        if len(inputs.shape) == 2:
-            for i in range(inputs.shape[1]):
-                mask *= np.maximum((-inputs[:, i] **
-                                   2 + np.pi * inputs[:, i]), 0)
-            mask = np.expand_dims(mask, -1)
-
-        elif len(inputs.shape) == 1:
-            for x in inputs:
-                mask *= np.maximum((-x ** 2 + np.pi * x), 0)
-
-        return mask*outputs
-
     def net_u(self, params, inputs):
         outputs = self.net_apply(params, inputs)
-        outputs = self.apply_mask(inputs, outputs)
+        outputs = apply_mask(inputs, outputs)
         return outputs
 
     def evaluate_spin(self, params, inputs, averages, beta):
@@ -168,7 +174,6 @@ class SpIN:
         return sigma_jac
 
     # Define a jit-compiled update step
-
     @partial(jit, static_argnums=(0,))
     def step(self, i, opt_state, batch):
         params = self.get_params(opt_state)
@@ -177,7 +182,7 @@ class SpIN:
         return loss, opt_state, averages
 
     # Optimize parameters in a loop
-    def train(self, dataset, nIter=10000):
+    def train(self, dataset, nIter):
         inputs = iter(dataset)
         pbar = trange(nIter)
 
@@ -210,7 +215,6 @@ class SpIN:
         return params, averages, beta
 
     # Evaluates predictions at test points
-
     @partial(jit, static_argnums=(0,))
     def eigenpairs(self, params, inputs, averages, beta):
         outputs, _ = self.evaluate_spin(params, inputs, averages, beta)

@@ -4,13 +4,13 @@ from torch.utils.data import Dataset
 
 
 class DataGenerator(Dataset):
-    def __init__(self, hyper):
+    def __init__(self, hyper, key=random.PRNGKey(1234)):
         self.dim = hyper["ndim"]
         self.min = hyper["box_min"]
         self.max = hyper["box_max"]
         self.batch_size = hyper["batch_size"]
         self.delta = self.max - self.min
-        self.key = random.PRNGKey(1234)
+        self.key = key
 
     @partial(jit, static_argnums=(0,))
     def __data_generation(self, key):
