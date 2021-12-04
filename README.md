@@ -21,6 +21,8 @@ hyperparameter!__. Here is a table of all hyperparameters:
 |Parameter    | Description                                   |
 | ---------   | --------------------------------------------- |
 | lr          | learning rate                                 |
+| box_min     | minimum of the domain (in all dimensions)     |
+| box_max     | maximum of the domain (in all dimensions)     |
 | ndim        | dimension number (only supports 1 or 2 now)   |
 | neig        | number of eigenfunctions to find              |
 | num_iters   | max iterations                                |

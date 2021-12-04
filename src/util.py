@@ -1,6 +1,5 @@
 from jax import numpy as np
-from jax import random, vmap, jacfwd
-from jax.nn import sigmoid
+from jax import vmap, jacfwd
 from jax.config import config
 import os
 
@@ -32,24 +31,3 @@ def laplacian_2d(u_fn, params, inputs):
     vec_fun = vmap(action, in_axes=(None, 0, 0))
     laplacian = vec_fun(params, inputs[:, 0], inputs[:, 1])
     return laplacian
-
-
-def MLP(layers):
-    def init(rng_key):
-        def init_layer(key, d_in, d_out):
-            k1, k2 = random.split(key)
-            W = random.normal(k1, (d_in, d_out))
-            b = random.normal(k2, (d_out,))
-            return W, b
-        key, *keys = random.split(rng_key, len(layers))
-        params = list(map(init_layer, keys, layers[:-1], layers[1:]))
-        return params
-
-    def apply(params, inputs):
-        for W, b in params[:-1]:
-            outputs = np.dot(inputs, W) + b
-            inputs = sigmoid(outputs)
-        W, b = params[-1]
-        outputs = np.dot(inputs, W) + b
-        return outputs
-    return init, apply

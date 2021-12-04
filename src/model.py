@@ -8,11 +8,19 @@ from tqdm import trange
 
 
 class SpIN:
-    # Initialize the class
-    def __init__(self, operator, layers, MLP):
+    def __init__(self, operator, MLP, hyper):
+        ndim = hyper["ndim"]
+        neig = hyper["neig"]
+        num_hidden = hyper["num_hidden"]
+        num_layers = hyper["num_layers"]
 
         # Callable operator function
         self.operator = operator
+
+        layers = [ndim]
+        for i in range(num_layers-1):
+            layers.append(num_hidden)
+        layers.append(neig)
 
         # Network initialization and evaluation functions
         self.net_init, self.net_apply = MLP(layers)
