@@ -15,6 +15,7 @@ def get_params():
     num_hidden = 64
     batch_size = 64
     grid_size = 128
+    verbosity = 10
     results = "results"
     param = None
 
@@ -39,6 +40,7 @@ def get_params():
             "num_hidden": num_hidden,
             "batch_size": batch_size,
             "results": results,
+            "verbosity": verbosity,
             "grid_size": grid_size
         }
     return hyper

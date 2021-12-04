@@ -133,7 +133,7 @@ def eigenpairs(params, inputs, averages, beta, net_u, operator):
 def loss_and_grad(net_u, operator, params, batch):
     r"""
     Compute the loss function and the gradient for learning. Acts similarly to
-    jax.value_and_grad() but instead uses masked gradient and returns the
+    jax.value_and_grad() but instead uses masked gradient. It also returns the
     moving averages.
     """
     # Fetch batch
@@ -179,6 +179,7 @@ def train(operator, dataset, MLP, hyper):
     num_layers = hyper["num_layers"]
     num_iters = hyper["num_iters"]
     lr = hyper["lr"]
+    verbosity = hyper["verbosity"]
     layers = [ndim]
     for i in range(num_layers-1):
         layers.append(num_hidden)
@@ -186,6 +187,14 @@ def train(operator, dataset, MLP, hyper):
     net_init, net_apply = MLP(layers)
     exp_lr = optax.exponential_decay(lr, transition_steps=1000, decay_rate=0.9)
     params = net_init(random.PRNGKey(0))
+
+    if verbosity >= 0:
+        print("Network Shape:")
+        for i, (W, b) in enumerate(params):
+            print('{}: W.shape = {} and b.shape = {}'.format(i,
+                                                             W.shape, b.shape))
+        print("")
+
     tx = optax.adam(exp_lr)
     opt_state = tx.init(params)
     net_u = jit(partial(net_u_full, net_apply=net_apply))

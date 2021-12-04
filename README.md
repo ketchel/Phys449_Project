@@ -13,7 +13,7 @@ Most of the code is in the `src` directory and their purposes are as follows:
 
 | File        | Description                                   |
 | ---------   | --------------------------------------------- |
-| model       | Main logic. Implements SpINs                  |
+| spin        | Main logic. Implements SpINs                  |
 | nn_gen      | Neural network implementation                 |
 | data_gen    | Pytorch Dataloader implementation             |
 | params      | Defines hyperparameters in a dict             |
@@ -23,7 +23,6 @@ Most of the code is in the `src` directory and their purposes are as follows:
 ## Dependencies
 
 ### External
-
 - jax
 - jaxlib
 - optax
@@ -31,8 +30,7 @@ Most of the code is in the `src` directory and their purposes are as follows:
 - tqdm
 - pytorch
 
-### Internal
-
+### Native
 - os
 - functools
 - itertools
@@ -54,23 +52,26 @@ with user-defined hyperparameters, run
 python main.py --param "path/to/params.json"
 ```
 
+For an example parameters file, see the `inputs` folder.
+
 ## Hyperparameters
 
 __Be warned that if you supply your own json file you must supply every
 hyperparameter!__. Here is a table of all hyperparameters:
 
-|Parameter    | Description                                   |
-| ---------   | --------------------------------------------- |
-| lr          | learning rate                                 |
-| box_min     | minimum of the domain (in all dimensions)     |
-| box_max     | maximum of the domain (in all dimensions)     |
-| ndim        | dimension number (only supports 1 or 2 now)   |
-| neig        | number of eigenfunctions to find              |
-| num_iters   | max iterations                                |
-| num_layers  | number of hidden layers                       |
-| num_hidden  | number of hidden nodes per hidden layer       |
-| batch_size  | batch size                                    |
-| results     | directory to save results to                  |
+|Parameter    | Description                                       |
+| ---------   | ---------------------------------------------     |
+| lr          | learning rate                                     |
+| box_min     | minimum of the domain (in all dimensions)         |
+| box_max     | maximum of the domain (in all dimensions)         |
+| ndim        | dimension number (only supports 1 or 2 now)       |
+| neig        | number of eigenfunctions to find                  |
+| num_iters   | max iterations                                    |
+| num_layers  | number of hidden layers                           |
+| num_hidden  | number of hidden nodes per hidden layer           |
+| batch_size  | batch size                                        |
+| results     | directory to save results to                      |
+| verbosity   | Verbosity level (>=0). Larger int -> more verbose |
 
 ## Acknowledgements
 
