@@ -52,17 +52,17 @@ def loss_and_grad(fnet, op, params, batch):
     inputs, avrgs, beta = batch
     n = inputs.shape[0]
     outputs, Sigma_avg = evaluate_spin(fnet, op, params, inputs, avrgs, beta)
-    _, _, _, rq, _ = outputs
-    loss = np.sum(np.diag(rq))  # Sum of the eigenvalues
+    _, _, _, Lambda, _ = outputs
+    loss = np.sum(np.diag(Lambda))  # Sum of the eigenvalues
 
     # Fetch batch
-    u, L_inv, _, rq, op = outputs
+    u, L_inv, _, Lambda, op_eval = outputs
     _, Sigma_jac_avg = avrgs
 
     L_diag = np.diag(np.diag(L_inv))
 
     # \frac{\partial tr(\Lambda)}{\partial \Sigma}
-    Sigma_grad = -np.matmul(L_inv.T, np.triu(np.dot(rq, L_diag)))
+    Sigma_grad = -np.matmul(L_inv.T, np.triu(np.dot(Lambda, L_diag)))
 
     # \frac{\partail tr(\Lambda){\partial \Pi}}
     Pi_grad = np.dot(L_inv.T, L_diag)
@@ -79,7 +79,7 @@ def loss_and_grad(fnet, op, params, batch):
     # gradient  = \frac{\partial tr(\Lambda)}{\partial \theta}
     gradients = tree_multimap(
         lambda x, y: (
-            np.tensordot(np.dot(Pi_grad.T, op.T), x, ([0, 1], [1, 0]))
+            np.tensordot(np.dot(Pi_grad.T, op_eval.T), x, ([0, 1], [1, 0]))
             + np.tensordot(Sigma_grad.T, y, ([0, 1], [1, 0]))
         )/n, theta_grad, Sigma_jac_avg)
 

@@ -18,8 +18,8 @@ else:
 
 @partial(jit, static_argnums=(0))
 def laplacian_1d(u_fn, params, inputs):
-    def action(params, inputs):
-        u_xx = jacfwd(jacfwd(u_fn, 1), 1)(params, inputs)
+    def action(params, x):
+        u_xx = jacfwd(jacfwd(u_fn, 1), 1)(params, x)
         return u_xx
     vec_fun = vmap(action, in_axes=(None, 0))
     laplacian = vec_fun(params, inputs)
