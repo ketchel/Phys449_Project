@@ -1,13 +1,13 @@
 import matplotlib.pyplot as plt
 from jax import numpy as np
 import numpy
-from src.spin import eigenpairs
+from src.spin import eigpairs
 from pandas import DataFrame
 import os
 
 
 def save_results(op, results, hyper):
-    params, averages, beta, net_u, logs = results
+    params, avrgs, beta, fnet, logs = results
     loss_log, evals_log = logs
     ndim = hyper["ndim"]
     neig = hyper["neig"]
@@ -28,9 +28,9 @@ def save_results(op, results, hyper):
     else:
         raise Exception("dimensions other than 1 or 2 are not supported yet.")
 
-    eval, efun = eigenpairs(params, test_input, averages, beta, net_u, op)
+    evals, efuns = eigpairs(fnet, op, params, test_input, avrgs, beta)
 
-    print('Predicted eigenvalues: {}'.format(eval))
+    print('Predicted eigenvalues: {}'.format(evals))
     numpy.save(os.path.join(results_dir, 'loss'), loss_log)
     numpy.save(os.path.join(results_dir, 'evals'), evals_log)
     DataFrame(loss_log).to_csv(os.path.join(results_dir, 'loss.csv'),
@@ -39,7 +39,7 @@ def save_results(op, results, hyper):
                                 header=False, index=False)
 
     for i in range(neig):
-        img = efun[:, i].reshape(grid_size, grid_size)
+        img = efuns[:, i].reshape(grid_size, grid_size)
         plt.imsave(os.path.join(results_dir, 'efun' + str(i+1) + '.png'), img)
 
     for i, (W, b) in enumerate(params):

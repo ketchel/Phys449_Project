@@ -7,7 +7,7 @@ import os
 
 use_gpu = False
 if use_gpu:
-    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
     os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".50"
     config.update("jax_platform_name", "gpu")
     print("using gpu as device\n")
