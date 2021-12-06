@@ -17,7 +17,6 @@ def get_params():
     grid_size = 128
     verbosity = 10
     results = "results"
-    operator = "laplacian"
     param = None
 
     parser = argparse.ArgumentParser(

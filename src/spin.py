@@ -23,7 +23,7 @@ def forward(fnet, op, params, x, avrgs, beta):
     L_inv = np.linalg.inv(np.linalg.cholesky(Sigma_avg))
     Pi = np.dot(op_eval.T, fnet_eval)/batch_size
     Lambda = np.dot(L_inv, np.dot(Pi, L_inv.T))
-    return fnet_eval, op_eval, L_inv, Pi, Lambda, Sigma_avg
+    return (fnet_eval, L_inv, Pi, Lambda, op_eval), Sigma_avg
 
 
 def eigen(fnet, op, params, x, avrgs, beta):
@@ -34,9 +34,11 @@ def eigen(fnet, op, params, x, avrgs, beta):
     cholesky. For more details see section A of the supplementary materials of
     the paper.
     """
-    outputs = forward(fnet, op, params, x, avrgs, beta)
-    fnet_eval, _, L_inv, _, Lambda, _ = outputs
-    return np.diag(Lambda), np.matmul(fnet_eval, L_inv.T)
+    outputs, _ = forward(fnet, op, params, x, avrgs, beta)
+    fnet_eval, L_inv, _, Lambda, _ = outputs
+    evals = np.diag(Lambda)
+    efuns = np.matmul(fnet_eval, L_inv.T)
+    return evals, efuns
 
 
 @partial(jit, static_argnums=(0, 1))
@@ -47,11 +49,14 @@ def backward(fnet, op, params, batch):
     moving averages. Masked gradient is implemented here (Refer to eq. 14).
     """
     x, avrgs, beta = batch
-    _, Sigma_jac_avg = avrgs
     batch_size = x.shape[0]
-    outputs = forward(fnet, op, params, x, avrgs, beta)
-    fnet_eval, op_eval, L_inv, _, Lambda, Sigma_avg = outputs
+    outputs, Sigma_avg = forward(fnet, op, params, x, avrgs, beta)
+    _, _, _, Lambda, _ = outputs
     loss = np.sum(np.diag(Lambda))  # Sum of the eigenvalues
+
+    # Fetch batch
+    fnet_eval, L_inv, _, Lambda, op_eval = outputs
+    _, Sigma_jac_avg = avrgs
     backprop = vmap(jacfwd(fnet), in_axes=(None, 0))(params, x)
 
     L_diag = np.diag(np.diag(L_inv))
@@ -62,19 +67,22 @@ def backward(fnet, op, params, batch):
     # \frac{\partail tr(\Lambda){\partial \Pi}}
     Pi_grad = np.dot(L_inv.T, L_diag)
 
+
     # frac{\partail \Sigma}{\partial \theta}
     Sigma_jac = tree_map(lambda x: np.tensordot(fnet_eval.T, x, 1), backprop)
     Sigma_jac_avg = tree_multimap(lambda x, y: (1. - beta) * x + beta * y,
                                   Sigma_jac_avg, Sigma_jac)
 
-    # \frac{\partial tr(\Lambda)}{\partial \theta}
     grads = tree_multimap(
         lambda x, y: -1.0*(
             np.tensordot(np.dot(Pi_grad.T, op_eval.T), x, ([0, 1], [1, 0]))
             + np.tensordot(Sigma_grad.T, y, ([0, 1], [1, 0])))/batch_size,
         backprop, Sigma_jac_avg)
 
-    return loss, grads, Sigma_avg, Sigma_jac_avg
+    # Store updated averages
+    avrgs = (Sigma_avg, Sigma_jac_avg)
+
+    return loss, grads, avrgs
 
 
 @partial(jit, static_argnums=(0, 1, 4))
@@ -82,10 +90,10 @@ def update(fnet, op, params, batch, tx, tx_state):
     r"""
     Applies one step of the training algorithm.
     """
-    loss, grads, Sigma_avg, Sigma_jac_avg = backward(fnet, op, params, batch)
+    loss, grads, avrgs = backward(fnet, op, params, batch)
     updates, opt_state = tx.update(grads, tx_state)
     params = optax.apply_updates(params, updates)
-    return params, loss, opt_state, Sigma_avg, Sigma_jac_avg
+    return params, loss, opt_state, avrgs
 
 
 def run(op, dataset, MLP, hyper):
@@ -130,12 +138,10 @@ def run(op, dataset, MLP, hyper):
             for i in range(x.shape[1]):
                 slice = x[:, i]
                 mask *= -np.minimum((slice - box_min)*(slice - box_max), 0)
-                # mask *= np.maximum(-slice**2 + box_max*slice , 0)
             mask = np.expand_dims(mask, -1)
         elif len(x.shape) == 1:
             for slice in x:
                 mask *= -np.minimum((slice - box_min)*(slice - box_max), 0)
-                # mask *= np.maximum(-slice**2 + box_max*slice , 0)
         return mask*logits
 
     iterator = iter(dataset)
@@ -151,14 +157,15 @@ def run(op, dataset, MLP, hyper):
                                                              W.shape, b.shape))
         print("")
 
-    sigma_avg = np.ones(neig)
-    init_sample = next(iterator)
-    u = fnet(params, init_sample)
-    theta_grad = jacfwd(fnet)(params, init_sample)
-    sigma_jac_avg = tree_map(lambda x: np.tensordot(u.T, x, 1), theta_grad)
-    avrgs = (sigma_avg, sigma_jac_avg)
+    # Initialize moving averages
+    Sigma_avg = np.ones(neig)
+    x = next(iterator)
+    fnet_eval = fnet(params, x)
+    backprop = jacfwd(fnet)(params, x)
+    Sigma_jac_avg = tree_map(lambda x: np.tensordot(fnet_eval.T, x, 1), backprop)
 
-    # Main training loop
+    avrgs = (Sigma_avg, Sigma_jac_avg)
+
     pbar = trange(num_iters)
     for _ in pbar:
         counter = next(itercount)
@@ -172,5 +179,4 @@ def run(op, dataset, MLP, hyper):
         evals_log[counter] = evals
         pbar.set_postfix({'Loss': loss})
 
-    logs = (loss_log, evals_log)
-    return params, avrgs, beta, fnet, logs
+    return params, avrgs, beta, fnet, (loss_log, evals_log)

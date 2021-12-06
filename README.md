@@ -32,9 +32,9 @@ Most of the code is in the `src` directory and their purposes are as follows:
 
 ### Native
 - os
-- shutil
 - functools
 - itertools
+- shutil
 
 ## Running
 
