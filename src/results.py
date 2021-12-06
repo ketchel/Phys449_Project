@@ -13,6 +13,8 @@ def save_results(op, results, hyper):
     neig = hyper["neig"]
     results = hyper["results"]
     grid_size = hyper["grid_size"]
+    llim = hyper["box_min"]
+    hlim = hyper["box_max"]
     parent_dir = os.getcwd()
     results_dir = os.path.join(parent_dir, results)
     if not os.path.exists(results_dir):
@@ -20,9 +22,9 @@ def save_results(op, results, hyper):
 
     # Test data
     if ndim == 1:
-        test_input = np.linspace(0.0, np.pi, grid_size)[:, None]
+        test_input = np.linspace(llim, hlim, grid_size)[:, None]
     elif ndim == 2:
-        x_star = np.linspace(0.0, np.pi, grid_size)
+        x_star = np.linspace(llim, hlim, grid_size)
         grid = np.meshgrid(x_star, x_star)
         test_input = np.array(grid).T.reshape(-1, ndim)
     else:
@@ -41,6 +43,12 @@ def save_results(op, results, hyper):
     for i in range(neig):
         img = efuns[:, i].reshape(grid_size, grid_size)
         plt.imsave(os.path.join(results_dir, 'efun' + str(i+1) + '.png'), img)
+    plt.subplot(1,2,1)
+    plt.plot(loss_log)
+    plt.subplot(1, 2, 2)
+    plt.plot(evals_log)
+    plt.savefig(os.path.join(results_dir, 'graphs' + '.png'))
+
 
     for i, (W, b) in enumerate(params):
         shape = W.shape

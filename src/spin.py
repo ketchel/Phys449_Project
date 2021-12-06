@@ -116,6 +116,7 @@ def train(op, dataset, MLP, hyper):
     num_iters = hyper["num_iters"]
     lr = hyper["lr"]
     verbosity = hyper["verbosity"]
+    lim = hyper["box_max"]
 
     # Build layers list
     layers = [ndim]
@@ -133,18 +134,20 @@ def train(op, dataset, MLP, hyper):
     @jit
     def fnet(params, x):
         logits = net_apply(params, x)
-        mask = 0.1
+        mask = 1.0
         if len(x.shape) == 2:
             for i in range(x.shape[1]):
-                mask *= np.maximum((-x[:, i] ** 2 + np.pi * x[:, i]), 0)
+                mask *= np.maximum((-x[:, i] ** 2 + lim * x[:, i]), 0)
+                # mask *= np.maximum((np.sqrt(2 * lim**2 - x[:, i]**2) - lim) / lim, 0)
+                # mask *= np.maximum((-x[:,i]**2 + lim**2), 0)
             mask = np.expand_dims(mask, -1)
         elif len(x.shape) == 1:
             for x in x:
-                mask *= np.maximum((-x ** 2 + np.pi * x), 0)
+                mask *= np.maximum((-x ** 2 + lim * x), 0)
         return mask*logits
 
     inputs = iter(dataset)
-    beta = 1.0
+    beta = hyper["beta"]
     itercount = itertools.count()
     loss_log = numpy.zeros(num_iters)
     evals_log = numpy.zeros((num_iters, neig))

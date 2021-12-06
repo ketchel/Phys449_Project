@@ -5,10 +5,10 @@ from functools import partial
 from jax import jit
 import os
 
-use_gpu = False
+use_gpu = True
 if use_gpu:
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
-    os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = ".50"
+    os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.5"
     config.update("jax_platform_name", "gpu")
     print("using gpu as device\n")
 else:
@@ -39,12 +39,33 @@ def laplacian_2d(u_fn, params, inputs):
     return laplacian
 
 
+@partial(jit, static_argnums=(0))
+def schrodinger_2d(u_fn, params, inputs):
+    fun = lambda params,x,y: u_fn(params, np.array([x,y]))
+
+    def action(params,x,y):
+        D = 50.0
+        u_xx = jacfwd(jacfwd(fun, 1), 1)(params,x,y)
+        u_yy = jacfwd(jacfwd(fun, 2), 2)(params,x,y)
+        x_prime = np.pi*(x + D)/(2*D)
+        y_prime = np.pi*(y + D)/(2*D)
+        return u_xx + u_yy - (1/np.linalg.norm([x_prime,y_prime]))*fun(params, x, y)
+    vec_fun = vmap(action, in_axes = (None, 0, 0))
+    schrodinger = vec_fun(params, inputs[:,0], inputs[:,1])
+    return schrodinger
+
+
 def get_operator(hyper):
-    ndim = hyper["ndim"]
-    if ndim == 1:
-        op = laplacian_1d
-    elif ndim == 2:
-        op = laplacian_2d
+    if hyper["operator"] == "laplacian":
+        ndim = hyper["ndim"]
+        if ndim == 1:
+            op = laplacian_1d
+        elif ndim == 2:
+            op = laplacian_2d
+        else:
+            raise Exception("dimensions other than 1 or 2 are not supported yet.")
+    elif hyper["operator"] == "schrodinger":
+        op = schrodinger_2d
     else:
-        raise Exception("dimensions other than 1 or 2 are not supported yet.")
+        raise Exception("Operator not defined. avail operators: laplacian_1d, laplacian_2d, schrodinger")
     return op
