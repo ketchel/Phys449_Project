@@ -10,13 +10,14 @@ def get_params():
     box_max = np.pi
     ndim = 2
     neig = 4
-    num_iters = 15000
+    num_iters = 600
     num_layers = 4
     num_hidden = 64
     batch_size = 64
     grid_size = 128
     verbosity = 10
     results = "results"
+    operator = "laplacian"
     param = None
 
     parser = argparse.ArgumentParser(
@@ -41,6 +42,7 @@ def get_params():
             "batch_size": batch_size,
             "results": results,
             "verbosity": verbosity,
-            "grid_size": grid_size
+            "grid_size": grid_size,
+            "operator": laplacian
         }
     return hyper

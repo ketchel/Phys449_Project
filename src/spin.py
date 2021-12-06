@@ -7,7 +7,7 @@ from tqdm import trange
 import optax
 
 
-def forward(fnet, op, params, x, avrgs, beta):
+def forward(fnet, op, params, x, Sigma_avg, beta):
     r"""
     Performs the feed forward over the neural network. Returns the evaluated
     function, the inverse cholesky decomposition, the covariance and lambda
@@ -17,16 +17,15 @@ def forward(fnet, op, params, x, avrgs, beta):
     batch_size = x.shape[0]
     fnet_eval = fnet(params, x)
     op_eval = op(fnet, params, x)
-    Sigma_avg, _ = avrgs  # Get previous avg
     Sigma = np.dot(fnet_eval.T, fnet_eval)/batch_size  # Calc new Sigma
     Sigma_avg = (1.0 - beta) * Sigma_avg + beta * Sigma  # Update avg
     L_inv = np.linalg.inv(np.linalg.cholesky(Sigma_avg))
     Pi = np.dot(op_eval.T, fnet_eval)/batch_size
     Lambda = np.dot(L_inv, np.dot(Pi, L_inv.T))
-    return (fnet_eval, L_inv, Pi, Lambda, op_eval), Sigma_avg
+    return fnet_eval, op_eval, L_inv, Pi, Lambda, Sigma_avg
 
 
-def eigen(fnet, op, params, x, avrgs, beta):
+def eigen(fnet, op, params, x, Sigma_avg, beta):
     r"""
     Computes both the eigenvalues and eigenfunctions. The eigenvalues are the
     diagonal elements of $\Lambda$ and the eigenfunctions are recovered by
@@ -34,11 +33,9 @@ def eigen(fnet, op, params, x, avrgs, beta):
     cholesky. For more details see section A of the supplementary materials of
     the paper.
     """
-    outputs, _ = forward(fnet, op, params, x, avrgs, beta)
-    fnet_eval, L_inv, _, Lambda, _ = outputs
-    evals = np.diag(Lambda)
-    efuns = np.matmul(fnet_eval, L_inv.T)
-    return evals, efuns
+    outputs = forward(fnet, op, params, x, Sigma_avg, beta)
+    fnet_eval, op_eval, L_inv, _, Lambda, _ = outputs
+    return np.diag(Lambda), np.matmul(fnet_eval, L_inv.T)
 
 
 @partial(jit, static_argnums=(0, 1))
@@ -49,16 +46,12 @@ def backward(fnet, op, params, batch):
     moving averages. Masked gradient is implemented here (Refer to eq. 14).
     """
     x, avrgs, beta = batch
+    Sigma_avg, Sigma_jac_avg = avrgs
     batch_size = x.shape[0]
-    outputs, Sigma_avg = forward(fnet, op, params, x, avrgs, beta)
-    _, _, _, Lambda, _ = outputs
+    outputs = forward(fnet, op, params, x, Sigma_avg, beta)
+    fnet_eval, op_eval, L_inv, _, Lambda, Sigma_avg = outputs
     loss = np.sum(np.diag(Lambda))  # Sum of the eigenvalues
-
-    # Fetch batch
-    fnet_eval, L_inv, _, Lambda, op_eval = outputs
-    _, Sigma_jac_avg = avrgs
     backprop = vmap(jacfwd(fnet), in_axes=(None, 0))(params, x)
-
     L_diag = np.diag(np.diag(L_inv))
 
     # \frac{\partial tr(\Lambda)}{\partial \Sigma}
@@ -66,7 +59,6 @@ def backward(fnet, op, params, batch):
 
     # \frac{\partail tr(\Lambda){\partial \Pi}}
     Pi_grad = np.dot(L_inv.T, L_diag)
-
 
     # frac{\partail \Sigma}{\partial \theta}
     Sigma_jac = tree_map(lambda x: np.tensordot(fnet_eval.T, x, 1), backprop)
@@ -79,10 +71,7 @@ def backward(fnet, op, params, batch):
             + np.tensordot(Sigma_grad.T, y, ([0, 1], [1, 0])))/batch_size,
         backprop, Sigma_jac_avg)
 
-    # Store updated averages
-    avrgs = (Sigma_avg, Sigma_jac_avg)
-
-    return loss, grads, avrgs
+    return loss, grads, (Sigma_avg, Sigma_jac_avg)
 
 
 @partial(jit, static_argnums=(0, 1, 4))
@@ -174,7 +163,8 @@ def run(op, dataset, MLP, hyper):
         batch = x, avrgs, beta
         results = update(fnet, op, params, batch, tx, tx_state)
         params, loss, tx_state, avrgs = results
-        evals, _ = eigen(fnet, op, params, x, avrgs, beta)
+        Sigma_avg, _ = avrgs
+        evals, _ = eigen(fnet, op, params, x, Sigma_avg, beta)
         loss_log[counter] = loss
         evals_log[counter] = evals
         pbar.set_postfix({'Loss': loss})

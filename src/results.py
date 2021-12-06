@@ -16,6 +16,8 @@ def save_results(op, results, hyper):
     grid_size = hyper["grid_size"]
     llim = hyper["box_min"]
     hlim = hyper["box_max"]
+
+    # Setup path
     parent_dir = os.getcwd()
     results_dir = os.path.join(parent_dir, results)
     if os.path.exists(results_dir):
@@ -32,7 +34,8 @@ def save_results(op, results, hyper):
     else:
         raise Exception("dimensions other than 1 or 2 are not supported yet.")
 
-    evals, efuns = eigen(fnet, op, params, test_input, avrgs, beta)
+    Sigma_avg, _ = avrgs
+    evals, efuns = eigen(fnet, op, params, test_input, Sigma_avg, beta)
 
     print('Predicted eigenvalues: {}'.format(evals))
     numpy.save(os.path.join(results_dir, 'loss'), loss_log)
@@ -53,11 +56,15 @@ def save_results(op, results, hyper):
             plt.imsave(path, img)
 
 
-    plt.subplot(1,2,1)
     plt.plot(loss_log)
-    plt.subplot(1, 2, 2)
+    plt.ylabel('Loss')
+    plt.xlabel('iteration')
+    plt.savefig(os.path.join(results_dir, 'Loss' + '.png'))
+
     plt.plot(evals_log)
-    plt.savefig(os.path.join(results_dir, 'graphs' + '.png'))
+    plt.ylabel('Eigenvalues')
+    plt.xlabel('iteration')
+    plt.savefig(os.path.join(results_dir, 'Eigenvalues' + '.png'))
 
 
     for i, (W, b) in enumerate(params):
