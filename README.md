@@ -79,7 +79,16 @@ hyperparameter!__. Here is a table of all hyperparameters:
 ## Results
 
 The results you get will consist of the following:
-1.
+1. loss.csv - a csv of the loss
+2. loss.npy - numpy bin file of loss.csv
+3. evals.csv - a csv of the eigenvalues
+4. evals.npy - numpy bin file of evals.csv
+5. Loss.png - a plot of the loss function over the iteration count
+6. Eigenvalues.png - a plot of the estimated eigenvalues over the iteration
+   count
+7. layeri.csv - a csv of the i'th layer of the neural network. First row is the
+   bias vector b, and the rest of the rows are weight matrix W
+8. layeri.npy - a numpy bin file of layeri.csv
 
 ## Acknowledgements
 

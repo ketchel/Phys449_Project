@@ -71,7 +71,7 @@ def backward(fnet, op, params, batch):
             + np.tensordot(Sigma_grad.T, y, ([0, 1], [1, 0])))/batch_size,
         backprop, Sigma_jac_avg)
 
-    return loss, grads, (Sigma_avg, Sigma_jac_avg)
+    return loss, grads, Sigma_avg, Sigma_jac_avg
 
 
 @partial(jit, static_argnums=(0, 1, 4))
@@ -79,10 +79,10 @@ def update(fnet, op, params, batch, tx, tx_state):
     r"""
     Applies one step of the training algorithm.
     """
-    loss, grads, avrgs = backward(fnet, op, params, batch)
+    loss, grads, Sigma_avg, Sigma_jac_avg = backward(fnet, op, params, batch)
     updates, opt_state = tx.update(grads, tx_state)
     params = optax.apply_updates(params, updates)
-    return params, loss, opt_state, avrgs
+    return params, loss, opt_state, Sigma_avg, Sigma_jac_avg
 
 
 def run(op, dataset, MLP, hyper):
@@ -153,20 +153,17 @@ def run(op, dataset, MLP, hyper):
     backprop = jacfwd(fnet)(params, x)
     Sigma_jac_avg = tree_map(lambda x: np.tensordot(fnet_eval.T, x, 1), backprop)
 
-    avrgs = (Sigma_avg, Sigma_jac_avg)
-
     pbar = trange(num_iters)
     for _ in pbar:
         counter = next(itercount)
         x = next(iterator)
         beta = beta if counter > 0 else 1.0
-        batch = x, avrgs, beta
+        batch = x, (Sigma_avg, Sigma_jac_avg), beta
         results = update(fnet, op, params, batch, tx, tx_state)
-        params, loss, tx_state, avrgs = results
-        Sigma_avg, _ = avrgs
+        params, loss, tx_state, Sigma_avg, Sigma_jac_avg = results
         evals, _ = eigen(fnet, op, params, x, Sigma_avg, beta)
         loss_log[counter] = loss
         evals_log[counter] = evals
         pbar.set_postfix({'Loss': loss})
 
-    return params, avrgs, beta, fnet, (loss_log, evals_log)
+    return params, (Sigma_avg, Sigma_jac_avg), beta, fnet, (loss_log, evals_log)
