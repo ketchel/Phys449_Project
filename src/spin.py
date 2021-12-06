@@ -7,27 +7,26 @@ from tqdm import trange
 import optax
 
 
-def evaluate_spin(fnet, op, params, x, avrgs, beta):
+def forward(fnet, op, params, x, avrgs, beta):
     r"""
-    Evaluates the network for a given input, params, and moving averages.
-    Returns the evaluated function, the inverse cholesky decomposition, the
-    covariance and lambda matrices (see the paper for details), the operator
-    (eg. laplacian) of the function evaluated for the input, and the average of
-    sigma (see paper).
+    Performs the feed forward over the neural network. Returns the evaluated
+    function, the inverse cholesky decomposition, the covariance and lambda
+    matrices (see the paper for details), the operator (eg. laplacian) of the
+    function evaluated for the input, and the average of sigma (see paper).
     """
-    n = x.shape[0]
-    u = fnet(params, x)
+    batch_size = x.shape[0]
+    fnet_eval = fnet(params, x)
+    op_eval = op(fnet, params, x)
     Sigma_avg, _ = avrgs  # Get previous avg
-    Sigma = np.dot(u.T, u)/n  # Calc new Sigma
+    Sigma = np.dot(fnet_eval.T, fnet_eval)/batch_size  # Calc new Sigma
     Sigma_avg = (1.0 - beta) * Sigma_avg + beta * Sigma  # Update avg
     L_inv = np.linalg.inv(np.linalg.cholesky(Sigma_avg))
-    op_eval = op(fnet, params, x)
-    Pi = np.dot(op_eval.T, u)/n
+    Pi = np.dot(op_eval.T, fnet_eval)/batch_size
     Lambda = np.dot(L_inv, np.dot(Pi, L_inv.T))
-    return (u, L_inv, Pi, Lambda, op_eval), Sigma_avg
+    return fnet_eval, op_eval, L_inv, Pi, Lambda, Sigma_avg
 
 
-def eigpairs(fnet, op, params, x, avrgs, beta):
+def eigen(fnet, op, params, x, avrgs, beta):
     r"""
     Computes both the eigenvalues and eigenfunctions. The eigenvalues are the
     diagonal elements of $\Lambda$ and the eigenfunctions are recovered by
@@ -35,29 +34,25 @@ def eigpairs(fnet, op, params, x, avrgs, beta):
     cholesky. For more details see section A of the supplementary materials of
     the paper.
     """
-    outputs, _ = evaluate_spin(fnet, op, params, x, avrgs, beta)
-    u, choli, _, rq, _ = outputs
-    evals = np.diag(rq)
-    efuns = np.matmul(u, choli.T)
-    return evals, efuns
+    outputs = forward(fnet, op, params, x, avrgs, beta)
+    fnet_eval, _, L_inv, _, Lambda, _ = outputs
+    return np.diag(Lambda), np.matmul(fnet_eval, L_inv.T)
 
 
 @partial(jit, static_argnums=(0, 1))
-def loss_and_grad(fnet, op, params, batch):
+def backward(fnet, op, params, batch):
     r"""
     Compute the loss function and the gradient for learning. Acts similarly to
     jax.value_and_grad() but instead uses masked gradient. It also returns the
     moving averages. Masked gradient is implemented here (Refer to eq. 14).
     """
-    inputs, avrgs, beta = batch
-    n = inputs.shape[0]
-    outputs, Sigma_avg = evaluate_spin(fnet, op, params, inputs, avrgs, beta)
-    _, _, _, Lambda, _ = outputs
-    loss = np.sum(np.diag(Lambda))  # Sum of the eigenvalues
-
-    # Fetch batch
-    u, L_inv, _, Lambda, op_eval = outputs
+    x, avrgs, beta = batch
     _, Sigma_jac_avg = avrgs
+    batch_size = x.shape[0]
+    outputs = forward(fnet, op, params, x, avrgs, beta)
+    fnet_eval, op_eval, L_inv, _, Lambda, Sigma_avg = outputs
+    loss = np.sum(np.diag(Lambda))  # Sum of the eigenvalues
+    backprop = vmap(jacfwd(fnet), in_axes=(None, 0))(params, x)
 
     L_diag = np.diag(np.diag(L_inv))
 
@@ -67,43 +62,33 @@ def loss_and_grad(fnet, op, params, batch):
     # \frac{\partail tr(\Lambda){\partial \Pi}}
     Pi_grad = np.dot(L_inv.T, L_diag)
 
-    # \frac{\partial u}{\partial \theta}
-    theta_grad = vmap(jacfwd(fnet), in_axes=(None, 0))(params, inputs)
-
     # frac{\partail \Sigma}{\partial \theta}
-    sigma_jac = tree_map(lambda x: np.tensordot(u.T, x, 1), theta_grad)
-
+    Sigma_jac = tree_map(lambda x: np.tensordot(fnet_eval.T, x, 1), backprop)
     Sigma_jac_avg = tree_multimap(lambda x, y: (1. - beta) * x + beta * y,
-                                  Sigma_jac_avg, sigma_jac)
+                                  Sigma_jac_avg, Sigma_jac)
 
-    # gradient  = \frac{\partial tr(\Lambda)}{\partial \theta}
-    gradients = tree_multimap(
-        lambda x, y: (
+    # \frac{\partial tr(\Lambda)}{\partial \theta}
+    grads = tree_multimap(
+        lambda x, y: -1.0*(
             np.tensordot(np.dot(Pi_grad.T, op_eval.T), x, ([0, 1], [1, 0]))
-            + np.tensordot(Sigma_grad.T, y, ([0, 1], [1, 0]))
-        )/n, theta_grad, Sigma_jac_avg)
+            + np.tensordot(Sigma_grad.T, y, ([0, 1], [1, 0])))/batch_size,
+        backprop, Sigma_jac_avg)
 
-    # Negate for gradient ascent
-    gradients = tree_map(lambda x: -1.0*x, gradients)
-
-    # Store updated averages
-    avrgs = (Sigma_avg, Sigma_jac_avg)
-
-    return loss, gradients, avrgs
+    return loss, grads, Sigma_avg, Sigma_jac_avg
 
 
 @partial(jit, static_argnums=(0, 1, 4))
-def step(fnet, op, params, batch, tx, tx_state):
+def update(fnet, op, params, batch, tx, tx_state):
     r"""
     Applies one step of the training algorithm.
     """
-    loss, gradients, averages = loss_and_grad(fnet, op, params, batch)
-    updates, opt_state = tx.update(gradients, tx_state)
+    loss, grads, Sigma_avg, Sigma_jac_avg = backward(fnet, op, params, batch)
+    updates, opt_state = tx.update(grads, tx_state)
     params = optax.apply_updates(params, updates)
-    return params, loss, opt_state, averages
+    return params, loss, opt_state, Sigma_avg, Sigma_jac_avg
 
 
-def train(op, dataset, MLP, hyper):
+def run(op, dataset, MLP, hyper):
     r"""
     Main function of this module. Once the operator, dataset and network of
     parameters are set, we can train the parameters.
@@ -116,7 +101,8 @@ def train(op, dataset, MLP, hyper):
     num_iters = hyper["num_iters"]
     lr = hyper["lr"]
     verbosity = hyper["verbosity"]
-    lim = hyper["box_max"]
+    box_max = hyper["box_max"]
+    box_min = hyper["box_min"]
 
     # Build layers list
     layers = [ndim]
@@ -133,21 +119,27 @@ def train(op, dataset, MLP, hyper):
 
     @jit
     def fnet(params, x):
+        r"""
+        Defines the function over the network. This is needed to enforce
+        boundary conditions for the PDE, but also to apply a mask over the
+        function to mitigate blow-up for certain domains.
+        """
         logits = net_apply(params, x)
         mask = 1.0
         if len(x.shape) == 2:
             for i in range(x.shape[1]):
-                mask *= np.maximum((-x[:, i] ** 2 + lim * x[:, i]), 0)
-                # mask *= np.maximum((np.sqrt(2 * lim**2 - x[:, i]**2) - lim) / lim, 0)
-                # mask *= np.maximum((-x[:,i]**2 + lim**2), 0)
+                slice = x[:, i]
+                mask *= -np.minimum((slice - box_min)*(slice - box_max), 0)
+                # mask *= np.maximum(-slice**2 + box_max*slice , 0)
             mask = np.expand_dims(mask, -1)
         elif len(x.shape) == 1:
-            for x in x:
-                mask *= np.maximum((-x ** 2 + lim * x), 0)
+            for slice in x:
+                mask *= -np.minimum((slice - box_min)*(slice - box_max), 0)
+                # mask *= np.maximum(-slice**2 + box_max*slice , 0)
         return mask*logits
 
-    inputs = iter(dataset)
-    beta = hyper["beta"]
+    iterator = iter(dataset)
+    beta = 1.0
     itercount = itertools.count()
     loss_log = numpy.zeros(num_iters)
     evals_log = numpy.zeros((num_iters, neig))
@@ -159,34 +151,26 @@ def train(op, dataset, MLP, hyper):
                                                              W.shape, b.shape))
         print("")
 
-    # Initialize moving averages
     sigma_avg = np.ones(neig)
-    init_sample = next(inputs)
+    init_sample = next(iterator)
     u = fnet(params, init_sample)
     theta_grad = jacfwd(fnet)(params, init_sample)
     sigma_jac_avg = tree_map(lambda x: np.tensordot(u.T, x, 1), theta_grad)
-
     avrgs = (sigma_avg, sigma_jac_avg)
 
     # Main training loop
     pbar = trange(num_iters)
-    for it in pbar:
-        # Set beta
+    for _ in pbar:
         counter = next(itercount)
+        x = next(iterator)
         beta = beta if counter > 0 else 1.0
-
-        # Create batch
-        batch = next(inputs), avrgs, beta
-
-        # Run one gradient descent update
-        params, loss, tx_state, avrgs = step(fnet, op, params, batch,
-                                             tx, tx_state)
-
-        # Logger
-        evals, _ = eigpairs(fnet, op, params, next(inputs), avrgs, beta)
+        batch = x, avrgs, beta
+        results = update(fnet, op, params, batch, tx, tx_state)
+        params, loss, tx_state, avrgs = results
+        evals, _ = eigen(fnet, op, params, x, avrgs, beta)
         loss_log[counter] = loss
         evals_log[counter] = evals
         pbar.set_postfix({'Loss': loss})
 
     logs = (loss_log, evals_log)
-    return (params, avrgs, beta, fnet, logs)
+    return params, avrgs, beta, fnet, logs

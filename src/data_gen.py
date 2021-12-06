@@ -13,12 +13,12 @@ class DataGenerator(Dataset):
         self.key = key
 
     @partial(jit, static_argnums=(0))
-    def __data_generation(self, key):
+    def gen(self, key):
         inputs = self.min + self.delta * \
             random.uniform(key, (self.batch_size, self.dim))
         return inputs
 
     def __getitem__(self, index):
         self.key, subkey = random.split(self.key)
-        X = self.__data_generation(subkey)
+        X = self.gen(subkey)
         return X

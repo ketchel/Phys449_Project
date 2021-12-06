@@ -32,6 +32,7 @@ Most of the code is in the `src` directory and their purposes are as follows:
 
 ### Native
 - os
+- shutil
 - functools
 - itertools
 
@@ -59,19 +60,26 @@ For an example parameters file, see the `inputs` folder.
 __Be warned that if you supply your own json file you must supply every
 hyperparameter!__. Here is a table of all hyperparameters:
 
-|Parameter    | Description                                       |
-| ---------   | ---------------------------------------------     |
-| lr          | learning rate                                     |
-| box_min     | minimum of the domain (in all dimensions)         |
-| box_max     | maximum of the domain (in all dimensions)         |
-| ndim        | dimension number (only supports 1 or 2 now)       |
-| neig        | number of eigenfunctions to find                  |
-| num_iters   | max iterations                                    |
-| num_layers  | number of hidden layers                           |
-| num_hidden  | number of hidden nodes per hidden layer           |
-| batch_size  | batch size                                        |
-| results     | directory to save results to                      |
-| verbosity   | Verbosity level (>=0). Larger int -> more verbose |
+|Parameter    | Description                                                 |
+| ---------   | ---------------------------------------------               |
+| lr          | learning rate                                               |
+| box_min     | minimum of the domain (in all dimensions)                   |
+| box_max     | maximum of the domain (in all dimensions)                   |
+| ndim        | dimension number (only supports 1 or 2 now)                 |
+| neig        | number of eigenfunctions to find                            |
+| num_iters   | max iterations                                              |
+| num_layers  | number of hidden layers                                     |
+| num_hidden  | number of hidden nodes per hidden layer                     |
+| batch_size  | batch size                                                  |
+| results     | dir to save results to. __If dir exists, will delete dir!__ |
+| verbosity   | Verbosity level (>=0). Larger int -> more verbose           |
+| grid_size   | The number of points (in each direction) for plotting       |
+| operator    | The operator you wish to train for                          |
+
+## Results
+
+The results you get will consist of the following:
+1.
 
 ## Acknowledgements
 
