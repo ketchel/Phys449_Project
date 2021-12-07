@@ -40,19 +40,30 @@ def laplacian_2d(u_fn, params, inputs):
 
 
 @partial(jit, static_argnums=(0))
-def schrodinger_2d(u_fn, params, inputs):
-    fun = lambda params,x,y: u_fn(params, np.array([x,y]))
+def schrodinger_1d(u_fn, params, inputs):
+    def action(params, x):
+        u_xx = jacfwd(jacfwd(u_fn, 1), 1)(params, x)
+        return u_xx - (u_fn(params, x) / np.linalg.norm(x))
+    vec_fun = vmap(action, in_axes=(None, 0))
+    laplacian = vec_fun(params, inputs)
+    return np.squeeze(laplacian)
 
-    def action(params,x,y):
-        u_xx = jacfwd(jacfwd(fun, 1), 1)(params,x,y)
-        u_yy = jacfwd(jacfwd(fun, 2), 2)(params,x,y)
-        return u_xx + u_yy - (fun(params, x, y)/np.linalg.norm([x,y]))
-    vec_fun = vmap(action, in_axes = (None, 0, 0))
-    schrodinger = vec_fun(params, inputs[:,0], inputs[:,1])
+
+@partial(jit, static_argnums=(0))
+def schrodinger_2d(u_fn, params, inputs):
+    def fun(params, x, y): return u_fn(params, np.array([x, y]))
+
+    def action(params, x, y):
+        u_xx = jacfwd(jacfwd(fun, 1), 1)(params, x, y)
+        u_yy = jacfwd(jacfwd(fun, 2), 2)(params, x, y)
+        return u_xx + u_yy - (fun(params, x, y) / np.linalg.norm([x, y]))
+    vec_fun = vmap(action, in_axes=(None, 0, 0))
+    schrodinger = vec_fun(params, inputs[:, 0], inputs[:, 1])
     return schrodinger
 
 
 def get_operator(hyper):
+    ndim = hyper["ndim"]
     if hyper["operator"] == "laplacian":
         ndim = hyper["ndim"]
         if ndim == 1:
@@ -60,14 +71,17 @@ def get_operator(hyper):
         elif ndim == 2:
             op = laplacian_2d
         else:
-            raise Exception("dimensions other than 1 or 2 are not supported yet.")
+            raise Exception(
+                "dimensions other than 1 or 2 are not supported yet.")
     elif hyper["operator"] == "schrodinger":
         if ndim == 1:
-            raise Exception("1d schrodinger not supported yet.")
+            op = schrodinger_1d
         elif ndim == 2:
             op = schrodinger_2d
         else:
-            raise Exception("dimensions other than 1 or 2 are not supported yet.")
+            raise Exception(
+                "dimensions other than 1 or 2 are not supported yet.")
     else:
-        raise Exception("Operator not defined. avail operators: laplacian_1d, laplacian_2d, schrodinger")
+        raise Exception("Operator not defined. avail operators:"
+                        + "laplacian_1d, laplacian_2d, schrodinger")
     return op
