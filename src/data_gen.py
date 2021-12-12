@@ -1,5 +1,4 @@
-from jax import random, jit
-from functools import partial
+from jax import random
 
 
 class DataGenerator():
@@ -10,7 +9,6 @@ class DataGenerator():
         self.batch_size = hyper["batch_size"]
         self.key = key
 
-    @partial(jit, static_argnums=(0))
     def __getitem__(self, index):
         self.key, subkey = random.split(self.key)
         return random.uniform(subkey, (self.batch_size, self.dim),

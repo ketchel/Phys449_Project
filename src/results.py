@@ -8,8 +8,7 @@ import shutil
 
 
 def save_results(op, results, hyper):
-    params, avrgs, beta, fnet, logs = results
-    loss_log, evals_log = logs
+    params, Sigma_avg, _, beta, fnet, loss_log, evals_log = results
     ndim = hyper["ndim"]
     neig = hyper["neig"]
     results = hyper["results"]
@@ -34,7 +33,6 @@ def save_results(op, results, hyper):
     else:
         raise Exception("dimensions other than 1 or 2 are not supported yet.")
 
-    Sigma_avg, _ = avrgs
     evals, efuns = eigen(fnet, op, params, test_input, Sigma_avg, beta)
 
     print('Predicted eigenvalues: {}'.format(evals))

@@ -45,26 +45,18 @@ def backward(fnet, op, params, batch):
     jax.value_and_grad() but instead uses masked gradient. It also returns the
     moving averages. Masked gradient is implemented here (Refer to eq. 14).
     """
-    x, avrgs, beta = batch
-    Sigma_avg, Sigma_jac_avg = avrgs
+    x, avrgs, Sigma_avg, Sigma_jac_avg, beta = batch
     batch_size = x.shape[0]
     outputs = forward(fnet, op, params, x, Sigma_avg, beta)
     fnet_eval, op_eval, L_inv, _, Lambda, Sigma_avg = outputs
     loss = np.sum(np.diag(Lambda))  # Sum of the eigenvalues
     backprop = vmap(jacfwd(fnet), in_axes=(None, 0))(params, x)
     L_diag = np.diag(np.diag(L_inv))
-
-    # \frac{\partial tr(\Lambda)}{\partial \Sigma}
     Sigma_grad = -np.matmul(L_inv.T, np.triu(np.dot(Lambda, L_diag)))
-
-    # \frac{\partail tr(\Lambda){\partial \Pi}}
     Pi_grad = np.dot(L_inv.T, L_diag)
-
-    # frac{\partail \Sigma}{\partial \theta}
     Sigma_jac = tree_map(lambda x: np.tensordot(fnet_eval.T, x, 1), backprop)
     Sigma_jac_avg = tree_multimap(lambda x, y: (1. - beta) * x + beta * y,
                                   Sigma_jac_avg, Sigma_jac)
-
     grads = tree_multimap(
         lambda x, y: -1.0*(
             np.tensordot(np.dot(Pi_grad.T, op_eval.T), x, ([0, 1], [1, 0]))
@@ -122,7 +114,7 @@ def run(op, dataset, MLP, hyper):
         function to mitigate blow-up for certain domains.
         """
         logits = net_apply(params, x)
-        mask = 1.0
+        mask = 0.1
         if len(x.shape) == 2:
             for i in range(x.shape[1]):
                 slice = x[:, i]
@@ -151,14 +143,15 @@ def run(op, dataset, MLP, hyper):
     x = next(iterator)
     fnet_eval = fnet(params, x)
     backprop = jacfwd(fnet)(params, x)
-    Sigma_jac_avg = tree_map(lambda x: np.tensordot(fnet_eval.T, x, 1), backprop)
+    Sigma_jac_avg = tree_map(
+        lambda x: np.tensordot(fnet_eval.T, x, 1), backprop)
 
     pbar = trange(num_iters)
     for _ in pbar:
         counter = next(itercount)
         x = next(iterator)
         beta = beta if counter > 0 else 1.0
-        batch = x, (Sigma_avg, Sigma_jac_avg), beta
+        batch = x, Sigma_avg, Sigma_jac_avg, beta
         results = update(fnet, op, params, batch, tx, tx_state)
         params, loss, tx_state, Sigma_avg, Sigma_jac_avg = results
         evals, _ = eigen(fnet, op, params, x, Sigma_avg, beta)
@@ -166,4 +159,4 @@ def run(op, dataset, MLP, hyper):
         evals_log[counter] = evals
         pbar.set_postfix({'Loss': loss})
 
-    return params, (Sigma_avg, Sigma_jac_avg), beta, fnet, (loss_log, evals_log)
+    return params, Sigma_avg, Sigma_jac_avg, beta, fnet, loss_log, evals_log

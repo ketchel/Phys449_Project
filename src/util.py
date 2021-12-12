@@ -83,5 +83,5 @@ def get_operator(hyper):
                 "dimensions other than 1 or 2 are not supported yet.")
     else:
         raise Exception("Operator not defined. avail operators:"
-                        + "laplacian_1d, laplacian_2d, schrodinger")
+                        + "laplacian, schrodinger")
     return op
