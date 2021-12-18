@@ -15,6 +15,25 @@ else:
     print("using cpu as device\n")
 
 
+def fnet_box(net_apply, box_min, box_max, params, x):
+    r"""
+    Defines the function over the network. This specific implementation applies
+    a boxed boundary condition. In terms of the Shrodinger equation, this is
+    the N-dimensional infinite-square well potential.
+    """
+    logits = net_apply(params, x)
+    mask = 0.1
+    if len(x.shape) == 2:
+        for i in range(x.shape[1]):
+            slice = x[:, i]
+            mask *= -np.minimum((slice - box_min)*(slice - box_max), 0)
+        mask = np.expand_dims(mask, -1)
+    elif len(x.shape) == 1:
+        for slice in x:
+            mask *= -np.minimum((slice - box_min)*(slice - box_max), 0)
+    return mask*logits
+
+
 @partial(jit, static_argnums=(0))
 def laplacian_1d(u_fn, params, x):
     def action(params, x):

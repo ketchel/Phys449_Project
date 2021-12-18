@@ -5,6 +5,7 @@ from itertools import count
 from functools import partial
 from tqdm import trange
 from optax import apply_updates, exponential_decay, adam
+from src.util import fnet_box
 
 
 def forward(fnet, op, params, x, Sigma_avg, beta):
@@ -101,29 +102,12 @@ def run(op, dataset, MLP, hyper):
 
     # Initialize things
     net_init, net_apply = MLP(layers)
-    exp_lr = exponential_decay(lr, transition_steps=1000, decay_rate=0.9)
     params = net_init(random.PRNGKey(0))
+    exp_lr = exponential_decay(lr, transition_steps=1000, decay_rate=0.9)
     tx = adam(exp_lr)
     tx_state = tx.init(params)
 
-    @jit
-    def fnet(params, x):
-        r"""
-        Defines the function over the network. This is needed to enforce
-        boundary conditions for the PDE, but also to apply a mask over the
-        function to mitigate blow-up for certain domains.
-        """
-        logits = net_apply(params, x)
-        mask = 0.1
-        if len(x.shape) == 2:
-            for i in range(x.shape[1]):
-                slice = x[:, i]
-                mask *= -np.minimum((slice - box_min)*(slice - box_max), 0)
-            mask = np.expand_dims(mask, -1)
-        elif len(x.shape) == 1:
-            for slice in x:
-                mask *= -np.minimum((slice - box_min)*(slice - box_max), 0)
-        return mask*logits
+    fnet = partial(fnet_box, net_apply, box_min, box_max)
 
     iterator = iter(dataset)
     beta = 1.0
@@ -134,15 +118,14 @@ def run(op, dataset, MLP, hyper):
     if verbosity >= 0:
         print("Network Shape:")
         for i, (W, b) in enumerate(params):
-            print('{}: W.shape = {} and b.shape = {}'.format(i,
-                                                             W.shape, b.shape))
+            print('{}: W.shape = {}, b.shape = {}'.format(i, W.shape, b.shape))
         print("")
 
     # Initialize moving averages
-    Sigma_avg = np.ones(neig)
     x = next(iterator)
     fnet_eval = fnet(params, x)
     backprop = jacfwd(fnet)(params, x)
+    Sigma_avg = np.ones(neig)
     Sigma_jac_avg = tree_map(
         lambda x: np.tensordot(fnet_eval.T, x, 1), backprop)
 
