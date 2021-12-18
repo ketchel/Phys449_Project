@@ -17,49 +17,44 @@ else:
 
 
 @partial(jit, static_argnums=(0))
-def laplacian_1d(u_fn, params, inputs):
+def laplacian_1d(u_fn, params, x):
     def action(params, x):
         u_xx = jacfwd(jacfwd(u_fn, 1), 1)(params, x)
         return u_xx
-    vec_fun = vmap(action, in_axes=(None, 0))
-    laplacian = vec_fun(params, inputs)
-    return np.squeeze(laplacian)
+    return np.squeeze(vmap(action, in_axes=(None, 0))(params, x))
 
 
 @partial(jit, static_argnums=(0))
-def laplacian_2d(u_fn, params, inputs):
+def laplacian_2d(u_fn, params, x):
     def fun(params, x, y): return u_fn(params, np.array([x, y]))
 
     def action(params, x, y):
         u_xx = jacfwd(jacfwd(fun, 1), 1)(params, x, y)
         u_yy = jacfwd(jacfwd(fun, 2), 2)(params, x, y)
         return u_xx + u_yy
-    vec_fun = vmap(action, in_axes=(None, 0, 0))
-    laplacian = vec_fun(params, inputs[:, 0], inputs[:, 1])
-    return laplacian
+
+    return vmap(action, in_axes=(None, 0, 0))(params, x[:, 0], x[:, 1])
 
 
 @partial(jit, static_argnums=(0))
-def schrodinger_1d(u_fn, params, inputs):
+def schrodinger_1d(u_fn, params, x):
     def action(params, x):
         u_xx = jacfwd(jacfwd(u_fn, 1), 1)(params, x)
         return u_xx - (u_fn(params, x) / np.linalg.norm(x))
-    vec_fun = vmap(action, in_axes=(None, 0))
-    laplacian = vec_fun(params, inputs)
-    return np.squeeze(laplacian)
+
+    return np.squeeze(vmap(action, in_axes=(None, 0))(params, x))
 
 
 @partial(jit, static_argnums=(0))
-def schrodinger_2d(u_fn, params, inputs):
+def schrodinger_2d(u_fn, params, x):
     def fun(params, x, y): return u_fn(params, np.array([x, y]))
 
     def action(params, x, y):
         u_xx = jacfwd(jacfwd(fun, 1), 1)(params, x, y)
         u_yy = jacfwd(jacfwd(fun, 2), 2)(params, x, y)
         return u_xx + u_yy - (fun(params, x, y) / np.linalg.norm([x, y]))
-    vec_fun = vmap(action, in_axes=(None, 0, 0))
-    schrodinger = vec_fun(params, inputs[:, 0], inputs[:, 1])
-    return schrodinger
+
+    return vmap(action, in_axes=(None, 0, 0))(params, x[:, 0], x[:, 1])
 
 
 def get_operator(hyper):

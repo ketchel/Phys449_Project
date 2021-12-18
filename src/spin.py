@@ -34,7 +34,7 @@ def eigen(fnet, op, params, x, Sigma_avg, beta):
     the paper.
     """
     outputs = forward(fnet, op, params, x, Sigma_avg, beta)
-    fnet_eval, op_eval, L_inv, _, Lambda, _ = outputs
+    fnet_eval, _, L_inv, _, Lambda, _ = outputs
     return np.diag(Lambda), np.matmul(fnet_eval, L_inv.T)
 
 
@@ -45,14 +45,14 @@ def backward(fnet, op, params, batch):
     jax.value_and_grad() but instead uses masked gradient. It also returns the
     moving averages. Masked gradient is implemented here (Refer to eq. 14).
     """
-    x, avrgs, Sigma_avg, Sigma_jac_avg, beta = batch
+    x, Sigma_avg, Sigma_jac_avg, beta = batch
     batch_size = x.shape[0]
     outputs = forward(fnet, op, params, x, Sigma_avg, beta)
     fnet_eval, op_eval, L_inv, _, Lambda, Sigma_avg = outputs
     loss = np.sum(np.diag(Lambda))  # Sum of the eigenvalues
     backprop = vmap(jacfwd(fnet), in_axes=(None, 0))(params, x)
     L_diag = np.diag(np.diag(L_inv))
-    Sigma_grad = -np.matmul(L_inv.T, np.triu(np.dot(Lambda, L_diag)))
+    Sigma_grad = -L_inv.T @ np.triu(np.dot(Lambda, L_diag))
     Pi_grad = np.dot(L_inv.T, L_diag)
     Sigma_jac = tree_map(lambda x: np.tensordot(fnet_eval.T, x, 1), backprop)
     Sigma_jac_avg = tree_multimap(lambda x, y: (1. - beta) * x + beta * y,
