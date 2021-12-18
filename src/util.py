@@ -1,14 +1,13 @@
 from jax import numpy as np
-from jax import vmap, jacfwd
+from jax import vmap, jacfwd, jit
 from jax.config import config
 from functools import partial
-from jax import jit
-import os
+from os import environ
 
 use_gpu = True
 if use_gpu:
-    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
-    os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.5"
+    environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
+    environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.5"
     config.update("jax_platform_name", "gpu")
     print("using gpu as device\n")
 else:

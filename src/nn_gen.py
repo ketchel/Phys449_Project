@@ -18,7 +18,7 @@ def MLP(layers):
     def apply(params, x):
         for i, (W, b) in enumerate(params):
             x = np.dot(x, W) + b
-            if i != len(params) - 1:
+            if i < len(params) - 1:
                 x = sigmoid(x)
         return x
 

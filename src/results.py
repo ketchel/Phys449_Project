@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 from jax import numpy as np
-import numpy
+from numpy import zeros, save
 from src.spin import eigen
 from pandas import DataFrame
-import os
-import shutil
+from os import getcwd, mkdir, path
+from shutil import rmtree
 
 
 def save_results(op, results, hyper):
@@ -17,11 +17,11 @@ def save_results(op, results, hyper):
     box_max = hyper["box_max"]
 
     # Setup path
-    parent_dir = os.getcwd()
-    results_dir = os.path.join(parent_dir, results)
-    if os.path.exists(results_dir):
-        shutil.rmtree(results_dir)
-    os.mkdir(results_dir)
+    parent_dir = getcwd()
+    results_dir = path.join(parent_dir, results)
+    if path.exists(results_dir):
+        rmtree(results_dir)
+    mkdir(results_dir)
 
     # Test data
     if ndim == 1:
@@ -36,11 +36,11 @@ def save_results(op, results, hyper):
     evals, efuns = eigen(fnet, op, params, test_input, Sigma_avg, beta)
 
     print('Predicted eigenvalues: {}'.format(evals))
-    numpy.save(os.path.join(results_dir, 'loss'), loss_log)
-    numpy.save(os.path.join(results_dir, 'evals'), evals_log)
-    DataFrame(loss_log).to_csv(os.path.join(results_dir, 'loss.csv'),
+    save(path.join(results_dir, 'loss'), loss_log)
+    save(path.join(results_dir, 'evals'), evals_log)
+    DataFrame(loss_log).to_csv(path.join(results_dir, 'loss.csv'),
                                header=False, index=False)
-    DataFrame(evals_log).to_csv(os.path.join(results_dir, 'evals.csv'),
+    DataFrame(evals_log).to_csv(path.join(results_dir, 'evals.csv'),
                                 header=False, index=False)
 
     if ndim == 1:
@@ -48,13 +48,13 @@ def save_results(op, results, hyper):
         plt.plot(xpts, efuns)
         plt.ylabel('Eigenfunctions')
         plt.xlabel('Domain')
-        path = os.path.join(results_dir, 'efuns.png')
-        plt.savefig(path)
+        the_path = path.join(results_dir, 'efuns.png')
+        plt.savefig(the_path)
     elif ndim == 2:
         for i in range(neig):
             img = efuns[:, i].reshape(grid_size, grid_size)
-            path = os.path.join(results_dir, 'efun' + str(i+1) + '.png')
-            plt.imsave(path, img)
+            the_path = path.join(results_dir, 'efun' + str(i+1) + '.png')
+            plt.imsave(the_path, img)
     plt.clf()
     plt.cla()
     plt.close()
@@ -62,7 +62,7 @@ def save_results(op, results, hyper):
     plt.plot(loss_log)
     plt.ylabel('Loss')
     plt.xlabel('iteration')
-    plt.savefig(os.path.join(results_dir, 'Loss' + '.png'))
+    plt.savefig(path.join(results_dir, 'Loss' + '.png'))
     plt.clf()
     plt.cla()
     plt.close()
@@ -70,16 +70,16 @@ def save_results(op, results, hyper):
     plt.plot(evals_log)
     plt.ylabel('Eigenvalues')
     plt.xlabel('iteration')
-    plt.savefig(os.path.join(results_dir, 'Eigenvalues' + '.png'))
+    plt.savefig(path.join(results_dir, 'Eigenvalues' + '.png'))
     plt.clf()
     plt.cla()
     plt.close()
 
     for i, (W, b) in enumerate(params):
         shape = W.shape
-        arr = numpy.zeros((shape[0] + 1, shape[1]))
+        arr = zeros((shape[0] + 1, shape[1]))
         arr[0, :] = b[:]
         arr[1:, :] = W
-        path = os.path.join(results_dir, 'layer' + str(i+1))
-        numpy.save(path, arr)
-        DataFrame(arr).to_csv(path + '.csv', header=False, index=False)
+        the_path = path.join(results_dir, 'layer' + str(i+1))
+        save(the_path, arr)
+        DataFrame(arr).to_csv(the_path + '.csv', header=False, index=False)

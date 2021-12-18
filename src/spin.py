@@ -1,10 +1,10 @@
 from jax import numpy as np
-import numpy
+from numpy import zeros
 from jax import tree_map, tree_multimap, random, jit, vmap, jacfwd
-import itertools
+from itertools import count
 from functools import partial
 from tqdm import trange
-import optax
+from optax import apply_updates, exponential_decay, adam
 
 
 def forward(fnet, op, params, x, Sigma_avg, beta):
@@ -73,7 +73,7 @@ def update(fnet, op, params, batch, tx, tx_state):
     """
     loss, grads, Sigma_avg, Sigma_jac_avg = backward(fnet, op, params, batch)
     updates, opt_state = tx.update(grads, tx_state)
-    params = optax.apply_updates(params, updates)
+    params = apply_updates(params, updates)
     return params, loss, opt_state, Sigma_avg, Sigma_jac_avg
 
 
@@ -101,9 +101,9 @@ def run(op, dataset, MLP, hyper):
 
     # Initialize things
     net_init, net_apply = MLP(layers)
-    exp_lr = optax.exponential_decay(lr, transition_steps=1000, decay_rate=0.9)
+    exp_lr = exponential_decay(lr, transition_steps=1000, decay_rate=0.9)
     params = net_init(random.PRNGKey(0))
-    tx = optax.adam(exp_lr)
+    tx = adam(exp_lr)
     tx_state = tx.init(params)
 
     @jit
@@ -127,9 +127,9 @@ def run(op, dataset, MLP, hyper):
 
     iterator = iter(dataset)
     beta = 1.0
-    itercount = itertools.count()
-    loss_log = numpy.zeros(num_iters)
-    evals_log = numpy.zeros((num_iters, neig))
+    itercount = count()
+    loss_log = zeros(num_iters)
+    evals_log = zeros((num_iters, neig))
 
     if verbosity >= 0:
         print("Network Shape:")
