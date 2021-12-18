@@ -1,4 +1,5 @@
 from jax import numpy as np
+from jax.numpy import diag, tensordot, triu
 from numpy import zeros
 from jax import tree_map, tree_multimap, random, jit, vmap, jacfwd
 from itertools import count
@@ -18,15 +19,15 @@ def forward(fnet, op, params, x, Sigma_avg, beta):
     batch_size = x.shape[0]
     fnet_eval = fnet(params, x)
     op_eval = op(fnet, params, x)
-    Sigma = np.dot(fnet_eval.T, fnet_eval)/batch_size  # Calc new Sigma
+    Sigma = (fnet_eval.T @ fnet_eval)/batch_size  # Calc new Sigma
+    Pi = (op_eval.T @ fnet_eval)/batch_size
     Sigma_avg = (1.0 - beta) * Sigma_avg + beta * Sigma  # Update avg
     L_inv = np.linalg.inv(np.linalg.cholesky(Sigma_avg))
-    Pi = np.dot(op_eval.T, fnet_eval)/batch_size
-    Lambda = np.dot(L_inv, np.dot(Pi, L_inv.T))
+    Lambda = L_inv @ Pi @ L_inv.T
     return fnet_eval, op_eval, L_inv, Pi, Lambda, Sigma_avg
 
 
-def eigen(fnet, op, params, x, Sigma_avg, beta):
+def eigen(fnet, op, Sigma_avg, beta, params, x):
     r"""
     Computes both the eigenvalues and eigenfunctions. The eigenvalues are the
     diagonal elements of $\Lambda$ and the eigenfunctions are recovered by
@@ -36,7 +37,7 @@ def eigen(fnet, op, params, x, Sigma_avg, beta):
     """
     outputs = forward(fnet, op, params, x, Sigma_avg, beta)
     fnet_eval, _, L_inv, _, Lambda, _ = outputs
-    return np.diag(Lambda), np.matmul(fnet_eval, L_inv.T)
+    return diag(Lambda), fnet_eval @ L_inv.T
 
 
 @partial(jit, static_argnums=(0, 1))
@@ -50,18 +51,21 @@ def backward(fnet, op, params, batch):
     batch_size = x.shape[0]
     outputs = forward(fnet, op, params, x, Sigma_avg, beta)
     fnet_eval, op_eval, L_inv, _, Lambda, Sigma_avg = outputs
-    loss = np.sum(np.diag(Lambda))  # Sum of the eigenvalues
+    loss = sum(diag(Lambda))  # Sum of the eigenvalues
+    L_diag = diag(diag(L_inv))
+    Sigma_grad = -L_inv.T @ triu(Lambda @ L_diag)
+    Pi_grad = L_diag @ L_inv @ op_eval.T
+
+    # The rest of these calculations act on the parameters, which is a list ADT
+    # instead of a numpy array. As such we need the Jax pytrees functionality.
     backprop = vmap(jacfwd(fnet), in_axes=(None, 0))(params, x)
-    L_diag = np.diag(np.diag(L_inv))
-    Sigma_grad = -L_inv.T @ np.triu(np.dot(Lambda, L_diag))
-    Pi_grad = np.dot(L_inv.T, L_diag)
-    Sigma_jac = tree_map(lambda x: np.tensordot(fnet_eval.T, x, 1), backprop)
+    Sigma_jac = tree_map(lambda x: tensordot(fnet_eval.T, x, 1), backprop)
     Sigma_jac_avg = tree_multimap(lambda x, y: (1. - beta) * x + beta * y,
                                   Sigma_jac_avg, Sigma_jac)
     grads = tree_multimap(
-        lambda x, y: -1.0*(
-            np.tensordot(np.dot(Pi_grad.T, op_eval.T), x, ([0, 1], [1, 0]))
-            + np.tensordot(Sigma_grad.T, y, ([0, 1], [1, 0])))/batch_size,
+        lambda x, y: -1.0/batch_size*(
+            tensordot(Pi_grad, x, ([0, 1], [1, 0]))
+            + tensordot(Sigma_grad.T, y, ([0, 1], [1, 0]))),
         backprop, Sigma_jac_avg)
 
     return loss, grads, Sigma_avg, Sigma_jac_avg
@@ -106,14 +110,13 @@ def run(op, dataset, MLP, hyper):
     exp_lr = exponential_decay(lr, transition_steps=1000, decay_rate=0.9)
     tx = adam(exp_lr)
     tx_state = tx.init(params)
-
-    fnet = partial(fnet_box, net_apply, box_min, box_max)
+    fnet = jit(partial(fnet_box, net_apply, box_min, box_max))
 
     iterator = iter(dataset)
     beta = 1.0
     itercount = count()
-    loss_log = zeros(num_iters)
-    evals_log = zeros((num_iters, neig))
+    losses = zeros(num_iters)
+    evals = zeros((num_iters, neig))
 
     if verbosity >= 0:
         print("Network Shape:")
@@ -126,8 +129,7 @@ def run(op, dataset, MLP, hyper):
     fnet_eval = fnet(params, x)
     backprop = jacfwd(fnet)(params, x)
     Sigma_avg = np.ones(neig)
-    Sigma_jac_avg = tree_map(
-        lambda x: np.tensordot(fnet_eval.T, x, 1), backprop)
+    Sigma_jac_avg = tree_map(lambda x: tensordot(fnet_eval.T, x, 1), backprop)
 
     pbar = trange(num_iters)
     for _ in pbar:
@@ -137,9 +139,10 @@ def run(op, dataset, MLP, hyper):
         batch = x, Sigma_avg, Sigma_jac_avg, beta
         results = update(fnet, op, params, batch, tx, tx_state)
         params, loss, tx_state, Sigma_avg, Sigma_jac_avg = results
-        evals, _ = eigen(fnet, op, params, x, Sigma_avg, beta)
-        loss_log[counter] = loss
-        evals_log[counter] = evals
+        eval, _ = eigen(fnet, op, Sigma_avg, beta, params, x)
+        losses[counter] = loss
+        evals[counter] = eval
         pbar.set_postfix({'Loss': loss})
 
-    return params, Sigma_avg, Sigma_jac_avg, beta, fnet, loss_log, evals_log
+    fixed_eigen = partial(eigen, fnet, op, Sigma_avg, beta)
+    return params, fixed_eigen, losses, evals

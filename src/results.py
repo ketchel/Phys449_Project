@@ -1,14 +1,13 @@
 import matplotlib.pyplot as plt
 from jax import numpy as np
 from numpy import zeros, save
-from src.spin import eigen
 from pandas import DataFrame
 from os import getcwd, mkdir, path
 from shutil import rmtree
 
 
 def save_results(op, results, hyper):
-    params, Sigma_avg, _, beta, fnet, loss_log, evals_log = results
+    params, eigen, losses, evals = results
     ndim = hyper["ndim"]
     neig = hyper["neig"]
     results = hyper["results"]
@@ -33,15 +32,15 @@ def save_results(op, results, hyper):
     else:
         raise Exception("dimensions other than 1 or 2 are not supported yet.")
 
-    evals, efuns = eigen(fnet, op, params, test_input, Sigma_avg, beta)
+    evals, efuns = eigen(params, test_input)
 
     print('Predicted eigenvalues: {}'.format(evals))
-    save(path.join(results_dir, 'loss'), loss_log)
-    save(path.join(results_dir, 'evals'), evals_log)
-    DataFrame(loss_log).to_csv(path.join(results_dir, 'loss.csv'),
-                               header=False, index=False)
-    DataFrame(evals_log).to_csv(path.join(results_dir, 'evals.csv'),
-                                header=False, index=False)
+    save(path.join(results_dir, 'loss'), losses)
+    save(path.join(results_dir, 'evals'), evals)
+    DataFrame(losses).to_csv(path.join(results_dir, 'loss.csv'),
+                             header=False, index=False)
+    DataFrame(evals).to_csv(path.join(results_dir, 'evals.csv'),
+                            header=False, index=False)
 
     if ndim == 1:
         xpts = np.linspace(box_min, box_max, grid_size)
@@ -59,7 +58,7 @@ def save_results(op, results, hyper):
     plt.cla()
     plt.close()
 
-    plt.plot(loss_log)
+    plt.plot(losses)
     plt.ylabel('Loss')
     plt.xlabel('iteration')
     plt.savefig(path.join(results_dir, 'Loss' + '.png'))
@@ -67,7 +66,7 @@ def save_results(op, results, hyper):
     plt.cla()
     plt.close()
 
-    plt.plot(evals_log)
+    plt.plot(evals)
     plt.ylabel('Eigenvalues')
     plt.xlabel('iteration')
     plt.savefig(path.join(results_dir, 'Eigenvalues' + '.png'))
