@@ -35,44 +35,44 @@ def fnet_box(net_apply, box_min, box_max, params, x):
 
 
 @partial(jit, static_argnums=(0))
-def laplacian_1d(u_fn, params, x):
-    def action(params, x):
-        u_xx = jacfwd(jacfwd(u_fn, 1), 1)(params, x)
+def laplacian_1d(u_fn, x):
+    def action(x):
+        u_xx = jacfwd(jacfwd(u_fn))(x)
         return u_xx
-    return np.squeeze(vmap(action, in_axes=(None, 0))(params, x))
+    return np.squeeze(vmap(action)(x))
 
 
 @partial(jit, static_argnums=(0))
-def laplacian_2d(u_fn, params, x):
-    def fun(params, x, y): return u_fn(params, np.array([x, y]))
+def laplacian_2d(u_fn, x):
+    def fun(x, y): return u_fn(np.array([x, y]))
 
-    def action(params, x, y):
-        u_xx = jacfwd(jacfwd(fun, 1), 1)(params, x, y)
-        u_yy = jacfwd(jacfwd(fun, 2), 2)(params, x, y)
+    def action(x, y):
+        u_xx = jacfwd(jacfwd(fun, 0), 0)(x, y)
+        u_yy = jacfwd(jacfwd(fun, 1), 1)(x, y)
         return u_xx + u_yy
 
-    return vmap(action, in_axes=(None, 0, 0))(params, x[:, 0], x[:, 1])
+    return vmap(action, in_axes=(0, 0))(x[:, 0], x[:, 1])
 
 
 @partial(jit, static_argnums=(0))
-def schrodinger_1d(u_fn, params, x):
-    def action(params, x):
-        u_xx = jacfwd(jacfwd(u_fn, 1), 1)(params, x)
-        return u_xx - (u_fn(params, x) / np.linalg.norm(x))
+def schrodinger_1d(u_fn, x):
+    def action(x):
+        u_xx = jacfwd(jacfwd(u_fn))(x)
+        return u_xx - (u_fn(x) / np.linalg.norm(x))
 
-    return np.squeeze(vmap(action, in_axes=(None, 0))(params, x))
+    return np.squeeze(vmap(action)(x))
 
 
 @partial(jit, static_argnums=(0))
-def schrodinger_2d(u_fn, params, x):
-    def fun(params, x, y): return u_fn(params, np.array([x, y]))
+def schrodinger_2d(u_fn, x):
+    def fun(x, y): return u_fn(np.array([x, y]))
 
-    def action(params, x, y):
-        u_xx = jacfwd(jacfwd(fun, 1), 1)(params, x, y)
-        u_yy = jacfwd(jacfwd(fun, 2), 2)(params, x, y)
-        return u_xx + u_yy - (fun(params, x, y) / np.linalg.norm([x, y]))
+    def action(x, y):
+        u_xx = jacfwd(jacfwd(fun, 0), 0)(x, y)
+        u_yy = jacfwd(jacfwd(fun, 1), 1)(x, y)
+        return u_xx + u_yy - (fun(x, y) / np.linalg.norm([x, y]))
 
-    return vmap(action, in_axes=(None, 0, 0))(params, x[:, 0], x[:, 1])
+    return vmap(action, in_axes=(0, 0))(x[:, 0], x[:, 1])
 
 
 def get_operator(hyper):

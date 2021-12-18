@@ -18,7 +18,7 @@ def forward(fnet, op, params, x, Sigma_avg, beta):
     """
     batch_size = x.shape[0]
     fnet_eval = fnet(params, x)
-    op_eval = op(fnet, params, x)
+    op_eval = op(partial(fnet, params), x)
     Sigma = (fnet_eval.T @ fnet_eval)/batch_size  # Calc new Sigma
     Pi = (op_eval.T @ fnet_eval)/batch_size
     Sigma_avg = (1.0 - beta) * Sigma_avg + beta * Sigma  # Update avg
